@@ -536,6 +536,10 @@ app.include_router(dxf_frontend_router, tags=["DXF Template V2 (Frontend)"])
 from dxf_simple_upload import router as dxf_simple_router  # noqa: E402
 app.include_router(dxf_simple_router, tags=["DXF Template Simple Upload"])
 
+# Mount DXF to Excel export API
+from dxf_to_excel import router as dxf_to_excel_router  # noqa: E402
+app.include_router(dxf_to_excel_router, tags=["DXF to Excel"])
+
 # Mount DXF on-demand API (extract params on-demand, no storage)
 from dxf_ondemand_api import router as dxf_ondemand_router  # noqa: E402
 app.include_router(dxf_ondemand_router, tags=["DXF On-Demand"])
