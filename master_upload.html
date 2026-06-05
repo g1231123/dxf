@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主控端 - 上传 DXF/DWG</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 560px;
+            overflow: hidden;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            padding: 28px 32px;
+        }
+        .card-header h1 { font-size: 22px; margin-bottom: 4px; }
+        .card-header p  { font-size: 13px; opacity: 0.85; }
+        .card-body { padding: 28px 32px; }
+
+        /* 状态 */
+        .status-bar {
+            display: flex; align-items: center; gap: 10px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            color: #555;
+        }
+        .dot { width:10px; height:10px; border-radius:50%; background:#f44336; animation: pulse 2s infinite; flex-shrink:0; }
+        .dot.on { background:#4caf50; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+        /* 上传区 */
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            margin-bottom: 20px;
+        }
+        .upload-area:hover  { background: rgba(102,126,234,0.05); }
+        .upload-area.dragover { background: rgba(102,126,234,0.12); border-color: #764ba2; }
+        .upload-icon { font-size: 48px; margin-bottom: 12px; }
+        .upload-area h3 { font-size: 16px; color: #333; margin-bottom: 6px; }
+        .upload-area p  { font-size: 13px; color: #999; }
+        #fileInput { display:none; }
+
+        /* 文件信息 */
+        .file-card {
+            display: none;
+            background: #f8f9ff;
+            border: 1px solid #e0e5ff;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 20px;
+        }
+        .file-card.show { display: flex; align-items: center; gap: 14px; }
+        .file-icon { font-size: 28px; flex-shrink:0; }
+        .file-meta { flex: 1; overflow: hidden; }
+        .file-meta .name { font-size: 14px; font-weight: 600; color: #333; white-space: nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .file-meta .size { font-size: 12px; color: #999; margin-top: 2px; }
+
+        /* 按钮 */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* 进度 */
+        .progress-wrap {
+            display: none;
+            margin-top: 16px;
+        }
+        .progress-wrap.show { display: block; }
+        .progress-bar-bg {
+            background: #eee;
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 6px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .progress-txt { font-size: 12px; color: #999; margin-top: 6px; text-align: center; }
+
+        /* 结果 */
+        .result-box {
+            display: none;
+            margin-top: 16px;
+            background: #e8f5e9;
+            border: 1px solid #a5d6a7;
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 13px;
+            color: #2e7d32;
+        }
+        .result-box.show { display: block; }
+        .result-box h4 { font-size: 14px; margin-bottom: 6px; }
+        .result-box .stat { display:flex; justify-content:space-between; margin: 3px 0; }
+        .result-box .stat span { color: #555; }
+        .result-box .stat strong { color: #1b5e20; }
+
+        .error-box {
+            display: none;
+            margin-top: 16px;
+            background: #fdecea;
+            border: 1px solid #ef9a9a;
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 13px;
+            color: #b71c1c;
+        }
+        .error-box.show { display: block; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="card-header">
+        <h1>🎮 主控端</h1>
+        <p>上传 DXF / DWG 文件，解析结果自动推送至被控端</p>
+    </div>
+    <div class="card-body">
+
+        <div class="status-bar">
+            <div class="dot" id="dot"></div>
+            <span id="statusTxt">正在连接服务器...</span>
+        </div>
+
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-icon">📁</div>
+            <h3>点击选择或拖放文件</h3>
+            <p>支持 .dxf 和 .dwg 格式</p>
+        </div>
+        <input type="file" id="fileInput" accept=".dxf,.dwg">
+
+        <div class="file-card" id="fileCard">
+            <div class="file-icon">📄</div>
+            <div class="file-meta">
+                <div class="name" id="fcName">-</div>
+                <div class="size" id="fcSize">-</div>
+            </div>
+        </div>
+
+        <button class="btn" id="sendBtn" disabled onclick="sendFile()">📤 解析并推送至被控端</button>
+
+        <div class="progress-wrap" id="progressWrap">
+            <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+            <div class="progress-txt" id="progressTxt">正在解析...</div>
+        </div>
+
+        <div class="result-box" id="resultBox">
+            <h4>✅ 解析成功，已广播至所有被控端</h4>
+            <div class="stat"><span>文件名</span><strong id="rName">-</strong></div>
+            <div class="stat"><span>实体数</span><strong id="rCount">-</strong></div>
+            <div class="stat"><span>图层数</span><strong id="rLayers">-</strong></div>
+            <details style="margin-top:10px">
+                <summary style="cursor:pointer;font-size:12px;color:#2e7d32">查看原始 shapes 数据 (JSON)</summary>
+                <pre id="rJson" style="margin-top:8px;font-size:10px;background:#f0f4f0;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#1b5e20"></pre>
+            </details>
+        </div>
+
+        <div class="error-box" id="errorBox">
+            <strong>❌ 错误：</strong><span id="errorMsg"></span>
+        </div>
+
+    </div>
+</div>
+
+<script>
+const WS_URL = 'ws://localhost:8080/ws/render';
+let ws = null;
+let selectedFile = null;
+let fileB64 = null;
+
+// ── WebSocket ──────────────────────────────────────────────
+function connect() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen  = () => setStatus('已连接，等待上传', true);
+    ws.onclose = () => { setStatus('连接断开，重连中...', false); disableBtn(); setTimeout(connect, 3000); };
+    ws.onerror = () => setStatus('连接错误', false);
+    ws.onmessage = ev => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'connected') setStatus(`已连接（${msg.total_clients} 个客户端）`, true);
+        if (msg.type === 'parsed')    onParsed(msg);
+        if (msg.type === 'error')     onError(msg.msg);
+    };
+}
+
+function setStatus(txt, on) {
+    document.getElementById('statusTxt').textContent = txt;
+    document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+}
+function disableBtn() { document.getElementById('sendBtn').disabled = true; }
+
+// ── 文件选择 ──────────────────────────────────────────────
+const fileInput  = document.getElementById('fileInput');
+const uploadArea = document.getElementById('uploadArea');
+
+fileInput.addEventListener('change', e => { if (e.target.files[0]) selectFile(e.target.files[0]); });
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+});
+
+function selectFile(file) {
+    selectedFile = file;
+    fileB64 = null;
+
+    document.getElementById('fcName').textContent = file.name;
+    document.getElementById('fcSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+    document.getElementById('fileCard').classList.add('show');
+    document.getElementById('resultBox').classList.remove('show');
+    document.getElementById('errorBox').classList.remove('show');
+
+    // 预读 base64（用 readAsDataURL 避免大文件栈溢出，完整保留所有字节）
+    const reader = new FileReader();
+    reader.onload = e => {
+        // e.target.result = "data:application/octet-stream;base64,XXXX"
+        fileB64 = e.target.result.split(',')[1];
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            document.getElementById('sendBtn').disabled = false;
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// ── 发送 ──────────────────────────────────────────────────
+function sendFile() {
+    if (!fileB64 || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('progressWrap').classList.add('show');
+    document.getElementById('progressBar').style.width = '30%';
+    document.getElementById('progressTxt').textContent = '正在上传并解析...';
+    document.getElementById('resultBox').classList.remove('show');
+    document.getElementById('errorBox').classList.remove('show');
+
+    ws.send(JSON.stringify({
+        type: 'parse',
+        filename: selectedFile.name,
+        file_data: fileB64,
+    }));
+
+    // 模拟进度动画
+    let pct = 30;
+    const timer = setInterval(() => {
+        pct = Math.min(pct + 5, 90);
+        document.getElementById('progressBar').style.width = pct + '%';
+    }, 200);
+    window._parseTimer = timer;
+}
+
+function onParsed(msg) {
+    clearInterval(window._parseTimer);
+    document.getElementById('progressBar').style.width = '100%';
+    document.getElementById('progressTxt').textContent = '解析完成！';
+
+    setTimeout(() => {
+        document.getElementById('progressWrap').classList.remove('show');
+        document.getElementById('sendBtn').disabled = false;
+    }, 800);
+
+    document.getElementById('rName').textContent   = msg.filename;
+    document.getElementById('rCount').textContent  = msg.entity_count;
+    document.getElementById('rLayers').textContent = (msg.layers || []).length;
+    document.getElementById('rJson').textContent   = JSON.stringify(msg.shapes || [], null, 2);
+    document.getElementById('resultBox').classList.add('show');
+}
+
+function onError(msg) {
+    clearInterval(window._parseTimer);
+    document.getElementById('progressWrap').classList.remove('show');
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('errorMsg').textContent = msg;
+    document.getElementById('errorBox').classList.add('show');
+}
+
+connect();
+</script>
+</body>
+</html>

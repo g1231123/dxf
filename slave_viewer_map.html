@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>被控端 — DXF + 底图 实时查看</title>
+    <!-- OpenLayers -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@8.2.0/ol.css">
+    <script src="https://cdn.jsdelivr.net/npm/ol@8.2.0/dist/ol.js"></script>
+    <!-- Proj4js for coordinate conversion -->
+    <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a14;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 16px; color: #667eea; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .file-badge {
+            background: #1e293b;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+        .dot.on { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+        
+        .body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        /* 左侧栏 */
+        .sidebar {
+            width: 260px;
+            background: #0f172a;
+            border-right: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .sb-section { padding: 12px; border-bottom: 1px solid #1e293b; }
+        .sb-section h3 { font-size: 12px; color: #94a3b8; margin-bottom: 10px; text-transform: uppercase; }
+        
+        /* 底图选择 */
+        .basemap-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .basemap-btn {
+            padding: 8px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+        }
+        .basemap-btn:hover { background: #334155; }
+        .basemap-btn.active { 
+            background: #3b82f6; 
+            border-color: #3b82f6; 
+            color: white; 
+        }
+        
+        /* 坐标系 */
+        .crs-select {
+            width: 100%;
+            padding: 6px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 11px;
+        }
+        
+        /* 统计 */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .stat-item { text-align: center; }
+        .stat-item .val { font-size: 18px; color: #667eea; font-weight: 600; }
+        .stat-item .lbl { font-size: 10px; color: #64748b; margin-top: 2px; }
+        
+        /* 图层列表 */
+        .layer-list { max-height: 200px; overflow-y: auto; }
+        .layer-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .layer-item:hover { background: rgba(102,126,234,0.1); }
+        .layer-dot { width: 10px; height: 10px; border-radius: 2px; }
+        
+        /* 地图容器 */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* 控件 */
+        .map-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 1000;
+        }
+        .ctrl-btn {
+            width: 36px;
+            height: 36px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ctrl-btn:hover { background: #334155; color: white; }
+        
+        /* 坐标显示 */
+        .coord-bar {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(15, 23, 42, 0.9);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            color: #94a3b8;
+            z-index: 1000;
+        }
+        
+        /* 图例 */
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(15, 23, 42, 0.9);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            z-index: 1000;
+            max-width: 200px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+        .legend-color { width: 20px; height: 3px; border-radius: 2px; }
+        
+        /* 加载遮罩 */
+        .loading {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 10, 20, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            display: none;
+        }
+        .loading.show { display: flex; }
+        .loading-spinner {
+            width: 40px; height: 40px;
+            border: 3px solid #334155;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* 实体列表面板 */
+        .entity-panel {
+            width: 320px;
+            background: #0f172a;
+            border-left: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+        }
+        .ep-header {
+            padding: 12px;
+            border-bottom: 1px solid #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ep-header h3 { font-size: 13px; color: #94a3b8; }
+        .ep-count { font-size: 11px; color: #64748b; }
+        .ep-filter { padding: 10px; border-bottom: 1px solid #1e293b; }
+        .ep-filter input {
+            width: 100%;
+            padding: 6px 10px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+        .ep-list { flex: 1; overflow-y: auto; padding: 6px; }
+        .ep-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .ep-item:hover { background: rgba(102,126,234,0.1); }
+        .ep-item.selected { background: rgba(102,126,234,0.2); }
+        .ep-type-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: #1e293b;
+            border-radius: 4px;
+            color: #667eea;
+        }
+        .ep-info { flex: 1; }
+        .ep-layer { font-size: 10px; color: #64748b; }
+        .ep-coord { font-size: 11px; color: #94a3b8; font-family: monospace; }
+        
+        /* 导入导出 */
+        .ep-actions {
+            padding: 10px;
+            border-top: 1px solid #1e293b;
+            display: flex;
+            gap: 8px;
+        }
+        .ep-actions button {
+            flex: 1;
+            padding: 8px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #94a3b8;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .ep-actions button:hover { background: #334155; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗺️ 被控端 — DXF + 底图 实时查看</h1>
+        <div class="header-right">
+            <span class="file-badge" id="fileBadge">等待主控端上传...</span>
+            <div class="badge">
+                <div class="dot" id="dot"></div>
+                <span id="statusTxt">未连接</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="body">
+        <!-- 左侧栏 -->
+        <div class="sidebar">
+            <div class="sb-section">
+                <h3>📊 实体统计</h3>
+                <div class="stat-grid">
+                    <div class="stat-item"><div class="val" id="sCnt">—</div><div class="lbl">总计</div></div>
+                    <div class="stat-item"><div class="val" id="sLine">—</div><div class="lbl">线段</div></div>
+                    <div class="stat-item"><div class="val" id="sCircle">—</div><div class="lbl">圆/弧</div></div>
+                </div>
+            </div>
+            
+            <div class="sb-section">
+                <h3>🗺️ 底图选择</h3>
+                <div class="basemap-grid">
+                    <button class="basemap-btn active" data-type="amap" onclick="setBasemap('amap')">高德地图</button>
+                    <button class="basemap-btn" data-type="tianditu" onclick="setBasemap('tianditu')">天地图</button>
+                    <button class="basemap-btn" data-type="osm" onclick="setBasemap('osm')">OpenStreetMap</button>
+                    <button class="basemap-btn" data-type="none" onclick="setBasemap('none')">无底图</button>
+                    <button class="basemap-btn" data-type="qgis_amap" onclick="setBasemap('qgis_amap')">🗺 高德(中文)代理</button>
+                    <button class="basemap-btn" data-type="qgis_amap_sat" onclick="setBasemap('qgis_amap_sat')">🛰 高德卫星(中文)</button>
+                    <button class="basemap-btn" data-type="qgis_esri" onclick="setBasemap('qgis_esri')">� ESRI卫星影像</button>
+                    <button class="basemap-btn" data-type="qgis_render_amap" onclick="setBasemap('qgis_render_amap')">🟢 QGIS渲染·高德中文</button>
+                    <button class="basemap-btn" data-type="qgis_render_osm" onclick="setBasemap('qgis_render_osm')">🟢 QGIS渲染·OSM</button>
+                    <button class="basemap-btn" data-type="qgis_render_esri" onclick="setBasemap('qgis_render_esri')">🟢 QGIS渲染·卫星</button>
+                </div>
+            </div>
+            
+            <div class="sb-section">
+                <h3>🎯 坐标系设置</h3>
+                <select class="crs-select" id="crsSelect" onchange="onCrsChange()">
+                    <option value="EPSG:4326">WGS84 (EPSG:4326)</option>
+                    <option value="EPSG:3857">Web墨卡托 (EPSG:3857)</option>
+                    <option value="CGCS2000">CGCS2000 / 国家2000</option>
+                    <option value="EPSG:4508">CGCS2000 / 3度带 114E</option>
+                    <option value="EPSG:4547">CGCS2000 / 3度带 117E</option>
+                    <option value="EPSG:4490">CGCS2000 地理坐标</option>
+                    <option value="LOCAL" selected>局部坐标 (需配准)</option>
+                </select>
+                <div style="margin-top:8px;font-size:10px;color:#64748b;">
+                    DXF通常是局部坐标，如需叠加底图请先设置坐标系
+                </div>
+            </div>
+            
+            <div class="sb-section" id="calibSection">
+                <h3>📍 坐标配准工具</h3>
+                <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+                    在 DXF 和底图上点击对应点建立映射
+                </div>
+                <div class="basemap-grid" style="grid-template-columns: 1fr;">
+                    <button class="basemap-btn" id="calibBtn" onclick="toggleCalibration()" style="background:#1e293b;">
+                        🔴 开始配准 (0/3)
+                    </button>
+                </div>
+                <div id="calibPoints" style="margin-top:8px;font-size:10px;color:#94a3b8;max-height:120px;overflow-y:auto;">
+                    <!-- 配准点列表 -->
+                </div>
+                <div class="basemap-grid" style="grid-template-columns: 1fr 1fr;margin-top:8px;" id="calibActions" style="display:none;">
+                    <button class="basemap-btn" onclick="applyCalibration()">✓ 应用</button>
+                    <button class="basemap-btn" onclick="clearCalibration()">✗ 清除</button>
+                </div>
+                <div style="margin-top:8px;font-size:10px;color:#64748b;">
+                    <div>• 第1步：点击 DXF 上的特征点</div>
+                    <div>• 第2步：点击底图对应位置</div>
+                    <div>• 至少 2 对点可完成配准</div>
+                </div>
+            </div>
+            
+            <div class="sb-section">
+                <h3>🎨 图层</h3>
+                <div class="layer-list" id="layerList"></div>
+            </div>
+            
+            <div class="sb-section">
+                <h3>🎮 视图</h3>
+                <button class="basemap-btn" style="width:100%;" onclick="fitToDXF()">适应 DXF 范围</button>
+                <button class="basemap-btn" style="width:100%;margin-top:6px;" onclick="fitToBasemap()">全图浏览</button>
+            </div>
+        </div>
+        
+        <!-- 地图 -->
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="map-controls">
+                <button class="ctrl-btn" onclick="zoomIn()" title="放大">+</button>
+                <button class="ctrl-btn" onclick="zoomOut()" title="缩小">−</button>
+                <button class="ctrl-btn" onclick="resetView()" title="重置">⌂</button>
+                <button class="ctrl-btn" onclick="toggleDXF()" title="显示/隐藏 DXF">👁</button>
+            </div>
+            <div class="coord-bar" id="coordBar">经度: — , 纬度: —</div>
+            <div class="legend" id="legend"></div>
+            <div class="loading" id="loading"><div class="loading-spinner"></div></div>
+        </div>
+        
+        <!-- 右侧实体列表 -->
+        <div class="entity-panel">
+            <div class="ep-header">
+                <h3>📋 实体列表</h3>
+                <span class="ep-count" id="epCount">0 个</span>
+            </div>
+            <div class="ep-filter">
+                <input type="text" id="epSearch" placeholder="搜索图层、类型、文字..." oninput="filterEntities()">
+            </div>
+            <div class="ep-list" id="epList"></div>
+            <div class="ep-actions">
+                <button onclick="exportGeoJSON()">⬇ 导出 GeoJSON</button>
+                <button onclick="exportKML()">⬇ 导出 KML</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ==================== 配置 ====================
+const WS_URL = 'ws://localhost:8080/ws/render';
+
+// 底图配置
+const BASEMAP_CONFIGS = {
+    amap: {
+        name: '高德地图',
+        urls: [
+            'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+            'https://webrd1{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+            'https://webrd2{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+            'https://webrd3{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}'
+        ],
+        projection: 'EPSG:3857',
+        maxZoom: 18
+    },
+    tianditu: {
+        name: '天地图',
+        url: 'https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=YOUR_TIANDITU_KEY',
+        projection: 'EPSG:3857',
+        maxZoom: 18
+    },
+    osm: {
+        name: 'OpenStreetMap',
+        url: 'https://{a-c}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 19
+    },
+    none: null,
+    qgis_amap: {
+        name: '高德地图(中文)代理',
+        url: 'http://localhost:8080/basemap/tile/amap_normal/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 18
+    },
+    qgis_amap_sat: {
+        name: '高德卫星路网(中文)代理',
+        url: 'http://localhost:8080/basemap/tile/amap_satellite_label/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 18
+    },
+    qgis_esri: {
+        name: 'ESRI卫星影像代理',
+        url: 'http://localhost:8080/basemap/tile/esri_imagery/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 19
+    },
+    qgis_render_amap: {
+        name: 'QGIS渲染·高德中文',
+        url: 'http://localhost:8080/map/tile/amap/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 18
+    },
+    qgis_render_osm: {
+        name: 'QGIS渲染·OSM',
+        url: 'http://localhost:8080/map/tile/osm/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 19
+    },
+    qgis_render_esri: {
+        name: 'QGIS渲染·ESRI卫星',
+        url: 'http://localhost:8080/map/tile/esri_satellite/{z}/{x}/{y}.png',
+        projection: 'EPSG:3857',
+        maxZoom: 19
+    }
+};
+
+// ==================== 状态 ====================
+let ws = null;
+let entities = [];
+let visibleLayers = new Set();
+let map = null;
+let dxfLayer = null;
+let basemapLayer = null;
+let currentBasemap = 'amap';
+let currentCrs = 'LOCAL';  // 默认局部坐标，需要配准
+let dxfVisible = true;
+let selectedFeature = null;
+
+// ==================== 配准状态 ====================
+let isCalibrating = false;
+let calibStep = 0;  // 0:等待DXF点, 1:等待地图点
+let calibPairs = [];  // [{dxf:[x,y], map:[lon,lat]}, ...]
+let calibDXFPoint = null;  // 临时存储当前DXF点
+let calibLayer = null;  // 配准点显示图层
+let calibTransform = null;  // 转换参数 {offsetX, offsetY, scale, rotation}
+let originalEntities = [];  // 保存原始坐标用于重新配准
+
+// ==================== 初始化 ====================
+document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+    connect();
+});
+
+function initMap() {
+    // 创建地图
+    map = new ol.Map({
+        target: 'map',
+        controls: [],
+        view: new ol.View({
+            center: ol.proj.fromLonLat([116.4074, 39.9042]), // 北京
+            zoom: 10,
+            maxZoom: 20,
+            minZoom: 3
+        })
+    });
+    
+    // 添加底图
+    setBasemap('amap');
+    
+    // 创建 DXF 矢量图层
+    dxfLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(),
+        style: styleFunction,
+        zIndex: 100
+    });
+    map.addLayer(dxfLayer);
+    
+    // 创建配准点图层
+    calibLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(),
+        zIndex: 200
+    });
+    map.addLayer(calibLayer);
+    
+    // 鼠标坐标显示
+    map.on('pointermove', (e) => {
+        const coord = ol.proj.toLonLat(e.coordinate);
+        document.getElementById('coordBar').textContent = 
+            `经度: ${coord[0].toFixed(6)} , 纬度: ${coord[1].toFixed(6)}`;
+    });
+    
+    // 点击处理（配准模式优先）
+    map.on('click', (e) => {
+        if (isCalibrating) {
+            handleCalibClick(e);
+            return;
+        }
+        const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
+        if (feature && feature.get('type') !== 'calibPoint') {
+            selectFeature(feature);
+        } else {
+            deselectFeature();
+        }
+    });
+}
+
+function styleFunction(feature) {
+    const color = feature.get('color') || '#FFFFFF';
+    const type = feature.get('type');
+    const isSelected = feature === selectedFeature;
+    const strokeWidth = isSelected ? 3 : 1;
+    
+    const baseStyle = new ol.style.Style({
+        stroke: new ol.style.Stroke({
+            color: isSelected ? '#ffee00' : color,
+            width: strokeWidth
+        }),
+        fill: new ol.style.Fill({
+            color: color + '33' // 20% opacity
+        }),
+        text: type?.includes('Text') ? new ol.style.Text({
+            text: feature.get('text') || '',
+            fill: new ol.style.Fill({ color: color }),
+            stroke: new ol.style.Stroke({ color: '#000', width: 2 }),
+            font: '12px sans-serif'
+        }) : undefined
+    });
+    
+    return baseStyle;
+}
+
+// ==================== 底图切换 ====================
+function setBasemap(type) {
+    currentBasemap = type;
+    
+    // 更新按钮状态
+    document.querySelectorAll('.basemap-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === type);
+    });
+    
+    // 移除旧底图
+    if (basemapLayer) {
+        map.removeLayer(basemapLayer);
+        basemapLayer = null;
+    }
+    
+    if (type === 'none') return;
+    
+    const config = BASEMAP_CONFIGS[type];
+    if (!config) return;
+    
+    // 创建新底图
+    const source = config.urls 
+        ? new ol.source.XYZ({
+            urls: config.urls,
+            maxZoom: config.maxZoom
+        })
+        : new ol.source.XYZ({
+            url: config.url,
+            maxZoom: config.maxZoom
+        });
+    
+    basemapLayer = new ol.layer.Tile({
+        source: source,
+        zIndex: 0
+    });
+    
+    map.getLayers().insertAt(0, basemapLayer);
+}
+
+// ==================== WebSocket ====================
+function connect() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => setStatus('已连接', true);
+    ws.onclose = () => { setStatus('连接断开', false); setTimeout(connect, 3000); };
+    ws.onerror = () => setStatus('连接错误', false);
+    ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'connected') setStatus(`已连接 (${msg.total_clients} 端)`, true);
+        if (msg.type === 'parsed') onParsed(msg);
+    };
+}
+
+function setStatus(txt, on) {
+    document.getElementById('statusTxt').textContent = txt;
+    document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+}
+
+// ==================== 接收并显示 DXF ====================
+function onParsed(msg) {
+    entities = msg.shapes || msg.entities || [];
+    visibleLayers = new Set(msg.layers || []);
+    
+    document.getElementById('fileBadge').textContent = 
+        `${msg.filename}  (${msg.entity_count} 实体)`;
+    
+    // 统计
+    let line = 0, circle = 0, poly = 0, text = 0, other = 0;
+    for (const e of entities) {
+        const t = e.type;
+        if (t === 'AddLine') line++;
+        else if (t === 'AddCircle' || t === 'AddArc') circle++;
+        else if (['AddPolyline', 'AddSpline'].includes(t)) poly++;
+        else if (t === 'AddText' || t === 'AddMText') text++;
+        else other++;
+    }
+    document.getElementById('sCnt').textContent = entities.length;
+    document.getElementById('sLine').textContent = line;
+    document.getElementById('sCircle').textContent = circle;
+    
+    // 更新图层列表
+    buildLayerList(msg.layers || []);
+    
+    // 转换为 GeoJSON 并显示
+    displayDXFOnMap(entities);
+    
+    // 更新实体列表
+    buildEntityList();
+    
+    // 适应视图
+    fitToDXF();
+}
+
+// ==================== DXF → OpenLayers ====================
+function displayDXFOnMap(shapes) {
+    const source = dxfLayer.getSource();
+    source.clear();
+    
+    const features = [];
+    
+    for (const shape of shapes) {
+        const feature = createFeatureFromShape(shape);
+        if (feature) {
+            features.push(feature);
+        }
+    }
+    
+    source.addFeatures(features);
+    updateLegend(shapes);
+}
+
+function createFeatureFromShape(shape) {
+    const type = shape.type;
+    let geometry = null;
+    
+    // 坐标转换：局部坐标 → WGS84
+    const transformCoord = (pt) => {
+        // 简化的坐标转换，实际应根据当前 CRS 设置进行转换
+        if (currentCrs === 'LOCAL') {
+            // 局部坐标需要配准，这里假设是米为单位，简单偏移到某个中心点
+            const centerLon = 116.4074;
+            const centerLat = 39.9042;
+            // 假设 1米 ≈ 0.00001度（非常粗略）
+            const scale = 0.00001;
+            return [centerLon + pt[0] * scale, centerLat + pt[1] * scale];
+        }
+        // 已经是地理坐标的情况
+        return [pt[0], pt[1]];
+    };
+    
+    const toMapCoord = (pt) => {
+        const coord = transformCoord(pt);
+        return ol.proj.fromLonLat(coord);
+    };
+    
+    switch (type) {
+        case 'AddLine':
+            if (shape.start_point && shape.end_point) {
+                geometry = new ol.geom.LineString([
+                    toMapCoord(shape.start_point),
+                    toMapCoord(shape.end_point)
+                ]);
+            }
+            break;
+            
+        case 'AddCircle':
+            if (shape.center && shape.radius) {
+                const center = toMapCoord(shape.center);
+                // 圆用多边形近似
+                const points = [];
+                const numPoints = 32;
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * Math.PI * 2;
+                    // 这里需要处理投影变形，简化处理
+                    const r = shape.radius * 0.00001; // 粗略转换
+                    points.push([
+                        center[0] + r * Math.cos(angle) * Math.cos(center[1] * Math.PI / 180),
+                        center[1] + r * Math.sin(angle)
+                    ]);
+                }
+                points.push(points[0]); // 闭合
+                geometry = new ol.geom.Polygon([points]);
+            }
+            break;
+            
+        case 'AddArc':
+            if (shape.center && shape.radius && shape.start_angle !== undefined && shape.end_angle !== undefined) {
+                const center = toMapCoord(shape.center);
+                const points = [];
+                const numPoints = 16;
+                const startRad = shape.start_angle * Math.PI / 180;
+                const endRad = shape.end_angle * Math.PI / 180;
+                let delta = endRad - startRad;
+                if (delta < 0) delta += Math.PI * 2;
+                
+                for (let i = 0; i <= numPoints; i++) {
+                    const angle = startRad + (delta * i / numPoints);
+                    const r = shape.radius * 0.00001;
+                    points.push([
+                        center[0] + r * Math.cos(angle) * Math.cos(center[1] * Math.PI / 180),
+                        center[1] + r * Math.sin(angle)
+                    ]);
+                }
+                geometry = new ol.geom.LineString(points);
+            }
+            break;
+            
+        case 'AddPolyline':
+        case 'AddSpline':
+            if (shape.points && shape.points.length >= 2) {
+                const coords = shape.points.map(p => toMapCoord(p));
+                if (shape.closed) {
+                    coords.push(coords[0]);
+                    geometry = new ol.geom.Polygon([coords]);
+                } else {
+                    geometry = new ol.geom.LineString(coords);
+                }
+            }
+            break;
+            
+        case 'AddText':
+        case 'AddMText':
+            if (shape.insert_point) {
+                geometry = new ol.geom.Point(toMapCoord(shape.insert_point));
+            }
+            break;
+            
+        case 'AddEllipse':
+            if (shape.center && shape.major_axis && shape.radius_ratio !== undefined) {
+                const center = toMapCoord(shape.center);
+                // 椭圆用多边形近似
+                const points = [];
+                const numPoints = 32;
+                const a = Math.hypot(shape.major_axis[0], shape.major_axis[1]) * 0.00001;
+                const b = a * shape.radius_ratio;
+                const rotation = Math.atan2(shape.major_axis[1], shape.major_axis[0]);
+                
+                for (let i = 0; i < numPoints; i++) {
+                    const angle = (i / numPoints) * Math.PI * 2;
+                    const x = a * Math.cos(angle);
+                    const y = b * Math.sin(angle);
+                    // 旋转
+                    const rx = x * Math.cos(rotation) - y * Math.sin(rotation);
+                    const ry = x * Math.sin(rotation) + y * Math.cos(rotation);
+                    points.push([
+                        center[0] + rx * Math.cos(center[1] * Math.PI / 180),
+                        center[1] + ry
+                    ]);
+                }
+                points.push(points[0]);
+                geometry = new ol.geom.Polygon([points]);
+            }
+            break;
+            
+        case 'AddInsert':
+            if (shape.insert_point) {
+                geometry = new ol.geom.Point(toMapCoord(shape.insert_point));
+            }
+            break;
+    }
+    
+    if (!geometry) return null;
+    
+    const feature = new ol.Feature({
+        geometry: geometry,
+        type: type,
+        name: shape.name,
+        handle: shape.handle,
+        layer: shape.layer,
+        color: shape.color || '#FFFFFF',
+        text: shape.text,
+        originalData: shape
+    });
+    
+    return feature;
+}
+
+// ==================== 图层列表 ====================
+function buildLayerList(layers) {
+    const el = document.getElementById('layerList');
+    el.innerHTML = '';
+    if (!layers.length) {
+        el.innerHTML = '<p style="font-size:11px;color:#64748b;padding:6px;">无图层</p>';
+        return;
+    }
+    
+    const layerColors = {};
+    for (const name of layers) {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+        layerColors[name] = `hsl(${h % 360}, 65%, 58%)`;
+    }
+    
+    for (const name of layers) {
+        const item = document.createElement('div');
+        item.className = 'layer-item';
+        item.innerHTML = `
+            <input type="checkbox" checked data-layer="${name}" style="cursor:pointer;">
+            <div class="layer-dot" style="background:${layerColors[name]}"></div>
+            <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
+        `;
+        item.querySelector('input').addEventListener('change', (e) => {
+            if (e.target.checked) visibleLayers.add(name);
+            else visibleLayers.delete(name);
+            filterFeaturesByLayer();
+        });
+        el.appendChild(item);
+    }
+}
+
+function filterFeaturesByLayer() {
+    const source = dxfLayer.getSource();
+    source.getFeatures().forEach(f => {
+        const layer = f.get('layer');
+        f.setStyle(visibleLayers.has(layer) ? undefined : new ol.style.Style(null));
+    });
+}
+
+// ==================== 实体列表 ====================
+function buildEntityList() {
+    const search = (document.getElementById('epSearch').value || '').toLowerCase();
+    const list = document.getElementById('epList');
+    list.innerHTML = '';
+    let count = 0;
+    
+    entities.forEach((ent, idx) => {
+        if (search) {
+            const hay = [ent.type, ent.layer, ent.text || '', ent.handle || ''].join(' ').toLowerCase();
+            if (!hay.includes(search)) return;
+        }
+        count++;
+        
+        const item = document.createElement('div');
+        item.className = 'ep-item';
+        item.innerHTML = `
+            <div class="ep-type-badge">${ent.type.replace('Add', '')}</div>
+            <div class="ep-info">
+                <div class="ep-layer">${ent.name || ent.handle || ''} <span style="color:#64748b">${ent.layer}</span></div>
+                ${ent.text ? `<div class="ep-coord">"${ent.text.substring(0, 30)}"</div>` : ''}
+            </div>
+        `;
+        item.addEventListener('click', () => zoomToEntity(ent));
+        list.appendChild(item);
+    });
+    
+    document.getElementById('epCount').textContent = count + ' 个';
+}
+
+function filterEntities() {
+    buildEntityList();
+}
+
+// ==================== 视图控制 ====================
+function zoomIn() {
+    const view = map.getView();
+    view.animate({ zoom: view.getZoom() + 1, duration: 200 });
+}
+
+function zoomOut() {
+    const view = map.getView();
+    view.animate({ zoom: view.getZoom() - 1, duration: 200 });
+}
+
+function resetView() {
+    map.getView().animate({
+        center: ol.proj.fromLonLat([116.4074, 39.9042]),
+        zoom: 10,
+        duration: 500
+    });
+}
+
+function toggleDXF() {
+    dxfVisible = !dxfVisible;
+    dxfLayer.setVisible(dxfVisible);
+}
+
+function fitToDXF() {
+    const source = dxfLayer.getSource();
+    const extent = source.getExtent();
+    if (extent && extent[0] !== Infinity) {
+        map.getView().fit(extent, { padding: [50, 50, 50, 50], duration: 500 });
+    }
+}
+
+function fitToBasemap() {
+    map.getView().animate({
+        center: ol.proj.fromLonLat([116.4074, 39.9042]),
+        zoom: 10,
+        duration: 500
+    });
+}
+
+function zoomToEntity(ent) {
+    const features = dxfLayer.getSource().getFeatures();
+    const feature = features.find(f => f.get('handle') === ent.handle);
+    if (feature) {
+        const geom = feature.getGeometry();
+        const extent = geom.getExtent();
+        const center = ol.extent.getCenter(extent);
+        map.getView().animate({ center: center, zoom: 18, duration: 500 });
+        selectFeature(feature);
+    }
+}
+
+function selectFeature(feature) {
+    selectedFeature = feature;
+    dxfLayer.getSource().refresh();
+}
+
+function deselectFeature() {
+    selectedFeature = null;
+    dxfLayer.getSource().refresh();
+}
+
+// ==================== 坐标系 ====================
+function onCrsChange() {
+    currentCrs = document.getElementById('crsSelect').value;
+    if (entities.length) {
+        displayDXFOnMap(entities);
+        fitToDXF();
+    }
+}
+
+// ==================== 图例 ====================
+function updateLegend(shapes) {
+    const legend = document.getElementById('legend');
+    const colorCount = {};
+    
+    shapes.forEach(s => {
+        const c = s.color || '#FFFFFF';
+        colorCount[c] = (colorCount[c] || 0) + 1;
+    });
+    
+    const topColors = Object.entries(colorCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+    
+    let html = '<div style="font-weight:bold;margin-bottom:6px;">图层颜色</div>';
+    topColors.forEach(([color, count]) => {
+        html += `
+            <div class="legend-item">
+                <div class="legend-color" style="background:${color}"></div>
+                <span>${color} (${count})</span>
+            </div>
+        `;
+    });
+    legend.innerHTML = html;
+}
+
+// ==================== 导出 ====================
+function shapesToGeoJSON(shapes) {
+    const features = shapes.map(s => {
+        let geom = null;
+        const type = s.type;
+        
+        const transform = (pt) => {
+            if (currentCrs === 'LOCAL') {
+                const scale = 0.00001;
+                return [116.4074 + pt[0] * scale, 39.9042 + pt[1] * scale];
+            }
+            return [pt[0], pt[1]];
+        };
+        
+        switch (type) {
+            case 'AddLine':
+                geom = { type: 'LineString', coordinates: [transform(s.start_point), transform(s.end_point)] };
+                break;
+            case 'AddCircle':
+            case 'AddArc':
+                geom = { type: 'Point', coordinates: transform(s.center) };
+                break;
+            case 'AddPolyline':
+            case 'AddSpline':
+                geom = { 
+                    type: s.closed ? 'Polygon' : 'LineString',
+                    coordinates: s.closed 
+                        ? [s.points.map(p => transform(p)).concat([transform(s.points[0])])]
+                        : s.points.map(p => transform(p))
+                };
+                break;
+            case 'AddText':
+            case 'AddMText':
+            case 'AddInsert':
+                geom = { type: 'Point', coordinates: transform(s.insert_point) };
+                break;
+            default:
+                if (s.center) geom = { type: 'Point', coordinates: transform(s.center) };
+                else if (s.insert_point) geom = { type: 'Point', coordinates: transform(s.insert_point) };
+        }
+        
+        return {
+            type: 'Feature',
+            geometry: geom,
+            properties: {
+                type: s.type,
+                name: s.name,
+                handle: s.handle,
+                layer: s.layer,
+                color: s.color,
+                text: s.text
+            }
+        };
+    }).filter(f => f.geometry);
+    
+    return { type: 'FeatureCollection', features: features };
+}
+
+function exportGeoJSON() {
+    if (!entities.length) { alert('暂无实体数据'); return; }
+    const geojson = shapesToGeoJSON(entities);
+    downloadFile(JSON.stringify(geojson, null, 2), 'dxf_export.geojson', 'application/json');
+}
+
+function exportKML() {
+    if (!entities.length) { alert('暂无实体数据'); return; }
+    // 简化 KML 导出
+    const geojson = shapesToGeoJSON(entities);
+    let kml = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
+    geojson.features.forEach((f, i) => {
+        kml += `<Placemark><name>${f.properties.name || i}</name>`;
+        if (f.geometry.type === 'Point') {
+            kml += `<Point><coordinates>${f.geometry.coordinates.join(',')},0</coordinates></Point>`;
+        } else if (f.geometry.type === 'LineString') {
+            kml += `<LineString><coordinates>${f.geometry.coordinates.map(c => c.join(',') + ',0').join(' ')}</coordinates></LineString>`;
+        }
+        kml += '</Placemark>\n';
+    });
+    kml += '</Document>\n</kml>';
+    downloadFile(kml, 'dxf_export.kml', 'application/vnd.google-earth.kml+xml');
+}
+
+function downloadFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ==================== 加载状态 ====================
+function showLoading(show) {
+    document.getElementById('loading').classList.toggle('show', show);
+}
+
+// ==================== 坐标配准功能 ====================
+
+function toggleCalibration() {
+    isCalibrating = !isCalibrating;
+    calibStep = 0;
+    calibDXFPoint = null;
+    
+    const btn = document.getElementById('calibBtn');
+    const actions = document.getElementById('calibActions');
+    
+    if (isCalibrating) {
+        btn.textContent = `🔴 配准中... 点击DXF特征点 (${calibPairs.length}/3 对)`;
+        btn.style.background = '#dc2626';
+        actions.style.display = 'grid';
+        // 保存原始坐标
+        if (!originalEntities.length && entities.length) {
+            originalEntities = JSON.parse(JSON.stringify(entities));
+        }
+    } else {
+        btn.textContent = `🔴 开始配准 (${calibPairs.length}/3 对)`;
+        btn.style.background = '#1e293b';
+        actions.style.display = 'none';
+    }
+    updateCalibPointsList();
+}
+
+function handleCalibClick(e) {
+    const coord = ol.proj.toLonLat(e.coordinate);
+    
+    if (calibStep === 0) {
+        // 第一步：点击 DXF 上的点（从 feature 或地图坐标推断）
+        const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
+        if (feature && feature.get('type') !== 'calibPoint') {
+            // 获取 feature 的几何中心作为 DXF 坐标
+            const geom = feature.getGeometry();
+            const extent = geom.getExtent();
+            const center = ol.extent.getCenter(extent);
+            // 将地图坐标转换回 DXF 局部坐标（简化：使用原始存储的数据）
+            calibDXFPoint = getFeatureOriginalCoord(feature);
+            if (calibDXFPoint) {
+                calibStep = 1;
+                updateCalibButton();
+                // 在地图上标记点
+                addCalibMarker(e.coordinate, 'dxf', calibPairs.length + 1);
+            }
+        } else {
+            alert('请点击 DXF 图形上的特征点');
+        }
+    } else if (calibStep === 1) {
+        // 第二步：点击底图对应位置
+        calibPairs.push({
+            dxf: calibDXFPoint,
+            map: [coord[0], coord[1]]
+        });
+        addCalibMarker(e.coordinate, 'map', calibPairs.length);
+        calibStep = 0;
+        calibDXFPoint = null;
+        updateCalibButton();
+        updateCalibPointsList();
+        
+        if (calibPairs.length >= 2) {
+            // 可以预览配准效果
+            previewCalibration();
+        }
+    }
+}
+
+function getFeatureOriginalCoord(feature) {
+    // 从 feature 获取原始 DXF 坐标
+    const data = feature.get('originalData');
+    if (!data) return null;
+    
+    // 优先返回中心点或插入点
+    if (data.center) return [data.center[0], data.center[1]];
+    if (data.insert_point) return [data.insert_point[0], data.insert_point[1]];
+    if (data.start_point) return [data.start_point[0], data.start_point[1]];
+    return null;
+}
+
+function addCalibMarker(coord, type, number) {
+    const color = type === 'dxf' ? '#ef4444' : '#22c55e';
+    const feature = new ol.Feature({
+        geometry: new ol.geom.Point(coord),
+        type: 'calibPoint',
+        calibType: type,
+        number: number
+    });
+    feature.setStyle(new ol.style.Style({
+        image: new ol.style.Circle({
+            radius: 8,
+            fill: new ol.style.Fill({ color: color }),
+            stroke: new ol.style.Stroke({ color: '#fff', width: 2 })
+        }),
+        text: new ol.style.Text({
+            text: String(number),
+            fill: new ol.style.Fill({ color: '#fff' }),
+            font: 'bold 10px sans-serif',
+            offsetY: -12
+        })
+    }));
+    calibLayer.getSource().addFeature(feature);
+}
+
+function updateCalibButton() {
+    const btn = document.getElementById('calibBtn');
+    if (calibStep === 0) {
+        btn.textContent = `🔴 配准中... 点击DXF特征点 (${calibPairs.length}/3 对)`;
+    } else {
+        btn.textContent = `🟢 点击底图对应位置 (${calibPairs.length}/3 对)`;
+    }
+}
+
+function updateCalibPointsList() {
+    const div = document.getElementById('calibPoints');
+    if (!calibPairs.length) {
+        div.innerHTML = '<div style="color:#64748b;">暂无配准点，请开始配准</div>';
+        return;
+    }
+    
+    let html = '';
+    calibPairs.forEach((p, i) => {
+        html += `<div style="margin:4px 0;padding:4px;background:#1e293b;border-radius:4px;">
+            <span style="color:#ef4444;">●</span> ${i+1}: 
+            DXF(${p.dxf[0].toFixed(1)}, ${p.dxf[1].toFixed(1)}) → 
+            地图(${p.map[0].toFixed(4)}, ${p.map[1].toFixed(4)})
+        </div>`;
+    });
+    div.innerHTML = html;
+}
+
+function previewCalibration() {
+    if (calibPairs.length < 2) return;
+    
+    // 计算配准参数（简化：仅平移 + 均匀缩放）
+    calibTransform = computeTransform(calibPairs);
+    if (calibTransform) {
+        // 应用转换显示 DXF
+        applyTransformToDXF(calibTransform);
+    }
+}
+
+function computeTransform(pairs) {
+    if (pairs.length === 2) {
+        // 两点配准：平移 + 缩放
+        const [p1, p2] = pairs;
+        const dxfDx = p2.dxf[0] - p1.dxf[0];
+        const dxfDy = p2.dxf[1] - p1.dxf[1];
+        const mapDx = p2.map[0] - p1.map[0];
+        const mapDy = p2.map[1] - p1.map[1];
+        
+        // 计算缩放比例
+        const dxfDist = Math.sqrt(dxfDx * dxfDx + dxfDy * dxfDy);
+        const mapDist = Math.sqrt(mapDx * mapDx + mapDy * mapDy);
+        const scale = mapDist / dxfDist;
+        
+        // 计算旋转角度
+        const dxfAngle = Math.atan2(dxfDy, dxfDx);
+        const mapAngle = Math.atan2(mapDy, mapDx);
+        const rotation = mapAngle - dxfAngle;
+        
+        // 计算偏移（先旋转缩放，再平移）
+        const cos = Math.cos(rotation);
+        const sin = Math.sin(rotation);
+        const rx = p1.dxf[0] * scale * cos - p1.dxf[1] * scale * sin;
+        const ry = p1.dxf[0] * scale * sin + p1.dxf[1] * scale * cos;
+        const offsetX = p1.map[0] - rx;
+        const offsetY = p1.map[1] - ry;
+        
+        return { offsetX, offsetY, scale, rotation };
+    } else if (pairs.length >= 3) {
+        // 三点配准：使用最小二乘法求解仿射变换
+        return computeAffineTransform(pairs);
+    }
+    return null;
+}
+
+function computeAffineTransform(pairs) {
+    // 简化：使用质心法求解
+    let dxfCx = 0, dxfCy = 0, mapCx = 0, mapCy = 0;
+    pairs.forEach(p => {
+        dxfCx += p.dxf[0]; dxfCy += p.dxf[1];
+        mapCx += p.map[0]; mapCy += p.map[1];
+    });
+    dxfCx /= pairs.length; dxfCy /= pairs.length;
+    mapCx /= pairs.length; mapCy /= pairs.length;
+    
+    // 计算缩放和旋转
+    let sxx = 0, sxy = 0, syx = 0, syy = 0;
+    pairs.forEach(p => {
+        const dxfX = p.dxf[0] - dxfCx;
+        const dxfY = p.dxf[1] - dxfCy;
+        const mapX = p.map[0] - mapCx;
+        const mapY = p.map[1] - mapCy;
+        sxx += dxfX * mapX; sxy += dxfX * mapY;
+        syx += dxfY * mapX; syy += dxfY * mapY;
+    });
+    
+    const det = sxx * syy - sxy * syx;
+    if (Math.abs(det) < 1e-10) return null;
+    
+    const a = (sxx * syy - sxy * syx) / det;  // 简化，实际应解线性方程
+    const scale = Math.sqrt((sxx * sxx + sxy * sxy) / (sxx * sxx + sxy * sxy + syx * syx + syy * syy)) || 1;
+    const rotation = Math.atan2(sxy, sxx);
+    
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const rx = dxfCx * scale * cos - dxfCy * scale * sin;
+    const ry = dxfCx * scale * sin + dxfCy * scale * cos;
+    
+    return {
+        offsetX: mapCx - rx,
+        offsetY: mapCy - ry,
+        scale: scale,
+        rotation: rotation
+    };
+}
+
+function applyTransformToDXF(transform) {
+    if (!originalEntities.length) return;
+    
+    // 深拷贝原始数据并应用变换
+    entities = originalEntities.map(ent => {
+        const newEnt = { ...ent };
+        
+        // 变换中心点
+        if (ent.center) {
+            newEnt.center = transformCoord(ent.center, transform);
+        }
+        // 变换插入点
+        if (ent.insert_point) {
+            newEnt.insert_point = transformCoord(ent.insert_point, transform);
+        }
+        // 变换起点终点
+        if (ent.start_point) {
+            newEnt.start_point = transformCoord(ent.start_point, transform);
+        }
+        if (ent.end_point) {
+            newEnt.end_point = transformCoord(ent.end_point, transform);
+        }
+        // 变换多段线点
+        if (ent.points) {
+            newEnt.points = ent.points.map(p => transformCoord(p, transform));
+        }
+        // 矩形参数
+        if (ent.type === 'AddRectangle' && ent.x !== undefined) {
+            const tl = transformCoord([ent.x, ent.y, 0], transform);
+            newEnt.x = tl[0];
+            newEnt.y = tl[1];
+            // 高度宽度也需要按缩放比例调整
+            newEnt.width = ent.width * transform.scale;
+            newEnt.height = ent.height * transform.scale;
+        }
+        // 圆半径
+        if (ent.radius) {
+            newEnt.radius = ent.radius * transform.scale;
+        }
+        // 文字高度
+        if (ent.height) {
+            newEnt.height = ent.height * transform.scale;
+        }
+        
+        return newEnt;
+    });
+    
+    // 重新显示
+    displayDXFOnMap(entities);
+    fitToDXF();
+}
+
+function transformCoord(pt, t) {
+    const x = pt[0];
+    const y = pt[1];
+    const z = pt[2] || 0;
+    
+    // 应用旋转和缩放
+    const cos = Math.cos(t.rotation);
+    const sin = Math.sin(t.rotation);
+    const rx = x * t.scale * cos - y * t.scale * sin;
+    const ry = x * t.scale * sin + y * t.scale * cos;
+    
+    // 应用平移
+    return [rx + t.offsetX, ry + t.offsetY, z];
+}
+
+function applyCalibration() {
+    if (calibPairs.length < 2) {
+        alert('至少需要 2 对配准点');
+        return;
+    }
+    
+    isCalibrating = false;
+    calibStep = 0;
+    calibDXFPoint = null;
+    
+    document.getElementById('calibBtn').textContent = `✅ 已配准 (${calibPairs.length}对点)`;
+    document.getElementById('calibBtn').style.background = '#16a34a';
+    document.getElementById('calibActions').style.display = 'none';
+    
+    // 清除标记点但保留配准结果
+    calibLayer.getSource().clear();
+    
+    alert('配准完成！DXF 已对齐到底图坐标系');
+}
+
+function clearCalibration() {
+    calibPairs = [];
+    calibStep = 0;
+    calibDXFPoint = null;
+    calibTransform = null;
+    
+    // 恢复原始坐标
+    if (originalEntities.length) {
+        entities = JSON.parse(JSON.stringify(originalEntities));
+        displayDXFOnMap(entities);
+    }
+    
+    // 清除标记
+    calibLayer.getSource().clear();
+    
+    // 重置 UI
+    const btn = document.getElementById('calibBtn');
+    btn.textContent = '🔴 开始配准 (0/3)';
+    btn.style.background = '#1e293b';
+    document.getElementById('calibActions').style.display = 'none';
+    updateCalibPointsList();
+    
+    isCalibrating = false;
+}
+</script>
+</body>
+</html>

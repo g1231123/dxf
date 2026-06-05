@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DXF 简化上传测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .upload-form {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .progress {
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #007bff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>DXF 简化上传测试</h1>
+    <p>直接上传文件到后端，不解析实体</p>
+    
+    <div class="upload-form">
+        <div>
+            <label>选择 DXF/DWG 文件：</label>
+            <input type="file" id="fileInput" accept=".dxf,.dwg">
+        </div>
+        
+        <div>
+            <label>模板名称（可选）：</label>
+            <input type="text" id="nameInput" placeholder="不填则使用文件名">
+        </div>
+        
+        <div class="progress" id="progress">
+            <div>上传进度：<span id="progressText">0%</span></div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+        
+        <button onclick="upload()" id="uploadBtn">上传</button>
+        
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        function upload() {
+            const fileInput = document.getElementById('fileInput');
+            const nameInput = document.getElementById('nameInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const progress = document.getElementById('progress');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const result = document.getElementById('result');
+            
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请选择文件');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            if (nameInput.value) {
+                formData.append('name', nameInput.value);
+            }
+            
+            uploadBtn.disabled = true;
+            progress.style.display = 'block';
+            result.style.display = 'none';
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    progressFill.style.width = percent + '%';
+                    progressText.textContent = percent.toFixed(0) + '%';
+                }
+            });
+            
+            xhr.addEventListener('load', () => {
+                uploadBtn.disabled = false;
+                
+                if (xhr.status === 200) {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.code === 0) {
+                        result.className = 'result success';
+                        result.innerHTML = `
+                            <h3>上传成功！</h3>
+                            <p><strong>ID:</strong> ${data.data.id}</p>
+                            <p><strong>名称:</strong> ${data.data.name}</p>
+                            <p><strong>文件大小:</strong> ${(data.data.file_size / 1024 / 1024).toFixed(2)} MB</p>
+                            <p><strong>文件URL:</strong> <a href="${data.data.file_url}" target="_blank">查看</a></p>
+                        `;
+                        result.style.display = 'block';
+                    } else {
+                        result.className = 'result error';
+                        result.textContent = '上传失败: ' + data.message;
+                        result.style.display = 'block';
+                    }
+                } else {
+                    result.className = 'result error';
+                    result.textContent = '上传失败: HTTP ' + xhr.status;
+                    result.style.display = 'block';
+                }
+            });
+            
+            xhr.addEventListener('error', () => {
+                uploadBtn.disabled = false;
+                result.className = 'result error';
+                result.textContent = '上传失败，请检查网络连接';
+                result.style.display = 'block';
+            });
+            
+            xhr.open('POST', 'http://localhost:8080/template/simple/upload');
+            xhr.send(formData);
+        }
+    </script>
+</body>
+</html>

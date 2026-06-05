@@ -1,0 +1,22 @@
+{
+  "name": "dxf-editor-frontend",
+  "version": "1.0.0",
+  "description": "DXF 模板编辑器 - 前端驱动方案",
+  "main": "DxfEditor.jsx",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dxf-parser": "^1.1.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "three": "^0.160.0",
+    "three-dxf-loader": "^5.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.0"
+  }
+}

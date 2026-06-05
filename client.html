@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CadLike WebSocket 测试客户端</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+        @media (max-width: 900px) {
+            .main {
+                grid-template-columns: 1fr;
+            }
+        }
+        .panel {
+            padding: 25px;
+            border-right: 1px solid #eee;
+        }
+        .panel:last-child {
+            border-right: none;
+            background: #f8f9fa;
+        }
+        .panel h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .panel h2::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 2px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group textarea {
+            min-height: 200px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            resize: vertical;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            box-shadow: none;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 0;
+            border-bottom: 1px solid #333;
+        }
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        .log-time {
+            color: #858585;
+            margin-right: 8px;
+        }
+        .log-send {
+            color: #4fc1ff;
+        }
+        .log-recv {
+            color: #7ee787;
+        }
+        .log-error {
+            color: #f48771;
+        }
+        .log-info {
+            color: #dcdcaa;
+        }
+        .preview-area {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .preview-area.has-image {
+            background: white;
+        }
+        .preview-area img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 4px;
+        }
+        .download-link {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .shape-presets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .preset-btn {
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+        
+        /* 角色切换标签 */
+        .role-tabs {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .role-tab {
+            padding: 12px 30px;
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        .role-tab:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .role-tab.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+        .role-tab .tab-desc {
+            font-size: 11px;
+            opacity: 0.8;
+            font-weight: 400;
+        }
+        
+        /* 角色标识徽章 */
+        .role-badge {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+        .role-badge.master {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-left: 4px solid #1976d2;
+        }
+        .role-badge.controlled {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border-left: 4px solid #7b1fa2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏗️ CadLike WebSocket 测试客户端</h1>
+            <p>AI 主控端 ←→ 被控端（渲染服务器）</p>
+            
+            <!-- 角色切换标签 -->
+            <div class="role-tabs">
+                <button class="role-tab active" onclick="switchRole('master')" id="tab-master">
+                    🎮 主控端 (Master)
+                    <span class="tab-desc">发送绘图指令</span>
+                </button>
+                <button class="role-tab" onclick="switchRole('controlled')" id="tab-controlled">
+                    🖥️ 被控端 (Controlled)
+                    <span class="tab-desc">模拟渲染服务器</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- 主控端视图 -->
+        <div id="view-master" class="main">
+            <div class="role-badge master">🎮 当前角色: 主控端 (AI Controller)</div>
+            <!-- 左侧：控制面板 -->
+            <div class="panel">
+                <h2>连接设置</h2>
+                
+                <div class="form-group">
+                    <label>服务器地址</label>
+                    <input type="text" id="wsUrl" value="ws://localhost:8080/ws/render" placeholder="ws://localhost:8080/ws/render">
+                </div>
+                
+                <div id="connectionStatus" class="status disconnected">
+                    <span class="status-dot"></span>
+                    <span id="statusText">未连接</span>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn" id="connectBtn" onclick="connect()">连接</button>
+                    <button class="btn btn-secondary" id="disconnectBtn" onclick="disconnect()" disabled>断开</button>
+                </div>
+                
+                <h2 style="margin-top: 25px;">绘图指令</h2>
+                
+                <div class="shape-presets">
+                    <button class="preset-btn" onclick="setPreset('circle')">🔴 圆形</button>
+                    <button class="preset-btn" onclick="setPreset('line')">📏 直线</button>
+                    <button class="preset-btn" onclick="setPreset('rect')">⬜ 矩形</button>
+                    <button class="preset-btn" onclick="setPreset('text')">📝 文字</button>
+                    <button class="preset-btn" onclick="setPreset('ellipse')">⭕ 椭圆</button>
+                    <button class="preset-btn" onclick="setPreset('multi')">🔷 组合</button>
+                </div>
+                
+                <div class="form-group">
+                    <label>JSON 指令 (CadLike 格式)</label>
+                    <textarea id="commandJson" placeholder='{
+  "type": "ai_edit",
+  "filename": "drawing.dxf",
+  "file_data": null,
+  "shapes": [
+    {
+      "id": "c1",
+      "type": "AddCircle",
+      "center": [100, 100, 0],
+      "radius": 50,
+      "color": "#FF0000"
+    }
+  ]
+}'></textarea>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn" id="sendBtn" onclick="sendCommand()" disabled>📤 发送指令</button>
+                    <button class="btn btn-secondary" onclick="clearLog()">🗑️ 清空日志</button>
+                </div>
+            </div>
+            
+            <!-- 右侧：日志和预览 -->
+            <div class="panel">
+                <h2>通信日志</h2>
+                <div id="log" class="log">等待连接...</div>
+                
+                <h2 style="margin-top: 20px;">结果预览</h2>
+                <div id="preview" class="preview-area">
+                    <p style="color: #999;">绘制结果将显示在这里</p>
+                </div>
+            </div>
+        </div>
+        </div>
+        
+        <!-- 被控端视图 -->
+        <div id="view-controlled" class="main" style="display: none;">
+            <div class="role-badge controlled">🖥️ 当前角色: 被控端 (Rendering Server)</div>
+            <div class="panel" style="grid-column: 1 / -1;">
+                <h2>被控端模拟器</h2>
+                <p style="margin-bottom: 15px; color: #666;">
+                    模拟渲染服务器行为，接收主控端指令并返回响应。
+                </p>
+                
+                <div class="form-group">
+                    <label>服务器地址</label>
+                    <input type="text" id="serverUrl" value="ws://localhost:8080/ws/render" placeholder="ws://localhost:8080/ws/render">
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn" id="startServerBtn" onclick="startControlledServer()">� 连接服务器</button>
+                    <button class="btn btn-secondary" id="stopServerBtn" onclick="stopControlledServer()" disabled>⏹️ 断开连接</button>
+                </div>
+                
+                <div id="serverStatus" class="status disconnected" style="margin-top: 15px;">
+                    <span class="status-dot"></span>
+                    <span id="serverStatusText">服务未启动</span>
+                </div>
+                
+                <h2 style="margin-top: 25px;">收到的指令</h2>
+                <div id="controlledLog" class="log">等待主控端连接...</div>
+                
+                <h2 style="margin-top: 25px;">渲染结果</h2>
+                <div id="controlledPreview" class="preview-area">
+                    <p style="color: #999;">等待主控端发送绘图指令...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let requestStartTime = null;
+        
+        // 预设指令
+        const presets = {
+            circle: {
+                type: "ai_edit",
+                filename: "circle.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "c1", type: "AddCircle", center: [100, 100, 0], radius: 50, color: "#FF0000", layer: "0" }
+                ]
+            },
+            line: {
+                type: "ai_edit",
+                filename: "line.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "l1", type: "AddLine", start_point: [0, 0, 0], end_point: [200, 200, 0], color: "#00FF00", layer: "0" }
+                ]
+            },
+            rect: {
+                type: "ai_edit",
+                filename: "rectangle.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "r1", type: "AddRectangle", x: 50, y: 50, width: 100, height: 80, color: "#0000FF", layer: "0" }
+                ]
+            },
+            text: {
+                type: "ai_edit",
+                filename: "text.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "t1", type: "AddText", text: "Hello CAD", insert_point: [50, 150, 0], height: 12, color: "#000000", layer: "0" }
+                ]
+            },
+            ellipse: {
+                type: "ai_edit",
+                filename: "ellipse.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "e1", type: "AddEllipse", center: [100, 100, 0], major_axis: [150, 100, 0], radius_ratio: 0.6, color: "#FF00FF", layer: "0" }
+                ]
+            },
+            multi: {
+                type: "ai_edit",
+                filename: "multi.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "c1", type: "AddCircle", center: [100, 100, 0], radius: 50, color: "#FF0000" },
+                    { id: "l1", type: "AddLine", start_point: [0, 0, 0], end_point: [200, 200, 0], color: "#00FF00" },
+                    { id: "t1", type: "AddText", text: "Multi Shape", insert_point: [50, 150, 0], height: 12, color: "#000000" }
+                ]
+            }
+        };
+        
+        function setPreset(name) {
+            const preset = presets[name];
+            document.getElementById('commandJson').value = JSON.stringify(preset, null, 2);
+        }
+        
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            log('info', `[主控端] 正在连接: ${url}`);
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                log('info', '[主控端] WebSocket 连接成功');
+                updateStatus(true);
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+            
+            ws.onerror = (error) => {
+                log('error', '[主控端] WebSocket 错误: ' + error);
+            };
+            
+            ws.onclose = () => {
+                log('info', '[主控端] WebSocket 连接关闭');
+                updateStatus(false);
+            };
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+        
+        function handleMessage(msg) {
+            const type = msg.type;
+            
+            switch(type) {
+                case 'connected':
+                    log('recv', `[被控端] 已连接: ${msg.msg} (clients: ${msg.total_clients})`);
+                    break;
+                    
+                case 'started':
+                    log('recv', `[被控端] 开始绘制: ${msg.filename} (${msg.shape_count} 个图形)`);
+                    break;
+                    
+                case 'progress':
+                    log('recv', `[被控端] 进度: ${msg.pct}% - ${msg.msg}`);
+                    break;
+                    
+                case 'result':
+                    const duration = requestStartTime ? Date.now() - requestStartTime : 0;
+                    log('recv', `[被控端] 完成! status=${msg.status}, engine=${msg.engine_used}`);
+                    log('info', `  ✓ 文件: ${msg.filename} (${msg.size_bytes} bytes)`);
+                    log('info', `  ✓ 图形: ${msg.success_count}/${msg.shape_count} 成功`);
+                    log('info', `  ✓ 耗时: ${duration}ms`);
+                    
+                    if (msg.data) {
+                        showPreview(msg.data, msg.filename);
+                    }
+                    break;
+                    
+                case 'error':
+                    log('error', `[被控端] 错误 ${msg.code}: ${msg.msg}`);
+                    break;
+                    
+                default:
+                    log('recv', `[被控端] ${type}: ${JSON.stringify(msg)}`);
+            }
+        }
+        
+        function sendCommand() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '[主控端] 未连接服务器');
+                return;
+            }
+            
+            const jsonText = document.getElementById('commandJson').value;
+            if (!jsonText.trim()) {
+                log('error', '[主控端] 请输入 JSON 指令');
+                return;
+            }
+            
+            try {
+                const cmd = JSON.parse(jsonText);
+                requestStartTime = Date.now();
+                ws.send(JSON.stringify(cmd));
+                log('send', `[主控端] 发送: ${cmd.type}${cmd.shapes ? ' (' + cmd.shapes.length + ' shapes)' : ''}`);
+            } catch (e) {
+                log('error', '[主控端] JSON 解析错误: ' + e.message);
+            }
+        }
+        
+        function showPreview(base64Data, filename) {
+            const preview = document.getElementById('preview');
+            const ext = filename.split('.').pop().toLowerCase();
+            
+            if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+                preview.innerHTML = `<img src="data:image/${ext};base64,${base64Data}" alt="preview">`;
+            } else if (ext === 'dxf' || ext === 'dwg') {
+                const blob = b64toBlob(base64Data, 'application/dxf');
+                const url = URL.createObjectURL(blob);
+                preview.innerHTML = `
+                    <p>📄 ${filename} 已生成</p>
+                    <a href="${url}" download="${filename}" class="download-link">⬇️ 下载 ${ext.toUpperCase()} 文件</a>
+                `;
+            }
+            preview.classList.add('has-image');
+        }
+        
+        function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
+            const byteCharacters = atob(b64Data);
+            const byteArrays = [];
+            
+            for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                const slice = byteCharacters.slice(offset, offset + sliceSize);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            
+            return new Blob(byteArrays, { type: contentType });
+        }
+        
+        function updateStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            if (connected) {
+                statusEl.className = 'status connected';
+                statusText.textContent = '已连接';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                sendBtn.disabled = false;
+            } else {
+                statusEl.className = 'status disconnected';
+                statusText.textContent = '未连接';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+            }
+        }
+        
+        function log(type, message) {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const typeClass = {
+                send: 'log-send',
+                recv: 'log-recv',
+                error: 'log-error',
+                info: 'log-info'
+            }[type] || 'log-info';
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">${time}</span><span class="${typeClass}">${message}</span>`;
+            
+            if (logEl.innerHTML === '等待连接...') {
+                logEl.innerHTML = '';
+            }
+            
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '日志已清空...';
+        }
+        
+        // 初始化
+        setPreset('circle');
+        
+        // 角色切换
+        function switchRole(role) {
+            const masterView = document.getElementById('view-master');
+            const controlledView = document.getElementById('view-controlled');
+            const masterTab = document.getElementById('tab-master');
+            const controlledTab = document.getElementById('tab-controlled');
+            
+            if (role === 'master') {
+                masterView.style.display = 'grid';
+                controlledView.style.display = 'none';
+                masterTab.classList.add('active');
+                controlledTab.classList.remove('active');
+            } else {
+                masterView.style.display = 'none';
+                controlledView.style.display = 'grid';
+                masterTab.classList.remove('active');
+                controlledTab.classList.add('active');
+            }
+        }
+        
+        // 被控端监控面板 - 连接到真实服务器查看日志
+        let monitorWs = null;
+        
+        function startControlledServer() {
+            const url = document.getElementById('serverUrl').value || 'ws://localhost:8080/ws/render';
+            logControlled('� 正在连接被控端服务器: ' + url);
+            
+            monitorWs = new WebSocket(url);
+            
+            monitorWs.onopen = () => {
+                logControlled('✅ 已连接到被控端服务器');
+                updateServerStatus(true);
+            };
+            
+            monitorWs.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMonitorMessage(msg);
+            };
+            
+            monitorWs.onerror = (error) => {
+                logControlled('❌ 连接错误: ' + error);
+                updateServerStatus(false);
+            };
+            
+            monitorWs.onclose = () => {
+                logControlled('� 连接已断开');
+                updateServerStatus(false);
+            };
+        }
+        
+        function handleMonitorMessage(msg) {
+            const type = msg.type;
+            
+            switch(type) {
+                case 'connected':
+                    logControlled(`📡 ${msg.msg} (当前连接数: ${msg.total_clients})`);
+                    break;
+                    
+                case 'started':
+                    logControlled(`🚀 主控端开始绘制: ${msg.filename}`);
+                    logControlled(`   └─ 图形数量: ${msg.shape_count}`);
+                    break;
+                    
+                case 'progress':
+                    logControlled(`⏳ 进度: ${msg.pct}% - ${msg.msg}`);
+                    break;
+                    
+                case 'result':
+                    logControlled(`✅ 绘制完成! status=${msg.status}`);
+                    logControlled(`   └─ 引擎: ${msg.engine_used}`);
+                    logControlled(`   └─ 成功: ${msg.success_count}/${msg.shape_count}`);
+                    logControlled(`   └─ 文件: ${msg.filename} (${msg.size_bytes} bytes)`);
+                    // 显示预览
+                    if (msg.data) {
+                        showControlledPreview(msg.data, msg.filename);
+                    }
+                    break;
+                    
+                case 'error':
+                    logControlled(`❌ 错误 ${msg.code}: ${msg.msg}`);
+                    break;
+                    
+                default:
+                    logControlled(`📨 ${type}: ${JSON.stringify(msg).substring(0, 100)}`);
+            }
+        }
+        
+        function stopControlledServer() {
+            if (monitorWs) {
+                monitorWs.close();
+                monitorWs = null;
+                logControlled('⏹️ 已断开监控连接');
+                updateServerStatus(false);
+            }
+        }
+        
+        function updateServerStatus(running) {
+            const statusEl = document.getElementById('serverStatus');
+            const statusText = document.getElementById('serverStatusText');
+            const startBtn = document.getElementById('startServerBtn');
+            const stopBtn = document.getElementById('stopServerBtn');
+            
+            if (running) {
+                statusEl.className = 'status connected';
+                statusText.textContent = '服务运行中';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } else {
+                statusEl.className = 'status disconnected';
+                statusText.textContent = '服务未启动';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+        
+        function showControlledPreview(base64Data, filename) {
+            const preview = document.getElementById('controlledPreview');
+            const ext = filename.split('.').pop().toLowerCase();
+            
+            if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+                preview.innerHTML = `<img src="data:image/${ext};base64,${base64Data}" alt="preview" style="max-width:100%;max-height:300px;border-radius:4px;">`;
+            } else if (ext === 'dxf' || ext === 'dwg') {
+                const blob = b64toBlob(base64Data, 'application/dxf');
+                const url = URL.createObjectURL(blob);
+                preview.innerHTML = `
+                    <p>📄 ${filename} 已生成 (${(blob.size/1024).toFixed(1)} KB)</p>
+                    <a href="${url}" download="${filename}" class="download-link">⬇️ 下载 ${ext.toUpperCase()} 文件</a>
+                `;
+            } else {
+                preview.innerHTML = `<p>✅ 文件已生成: ${filename}</p>`;
+            }
+            preview.classList.add('has-image');
+        }
+        
+        function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
+            const byteCharacters = atob(b64Data);
+            const byteArrays = [];
+            
+            for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                const slice = byteCharacters.slice(offset, offset + sliceSize);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            
+            return new Blob(byteArrays, { type: contentType });
+        }
+        
+        function logControlled(message) {
+            const logEl = document.getElementById('controlledLog');
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">${time}</span><span class="log-recv">${message}</span>`;
+            
+            if (logEl.innerHTML === '等待主控端连接...') {
+                logEl.innerHTML = '';
+            }
+            
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>

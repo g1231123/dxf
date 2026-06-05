@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>被控端 - DXF 3D 查看器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #f44336;
+            animation: pulse 2s infinite;
+        }
+        .status-dot.connected {
+            background: #4caf50;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .status-text {
+            font-size: 14px;
+        }
+        .viewer-container {
+            flex: 1;
+            position: relative;
+            background: #0a0a14;
+        }
+        #dxfViewer {
+            width: 100%;
+            height: 100%;
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            border-radius: 12px;
+            padding: 15px;
+            min-width: 200px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+        .controls h3 {
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: #e94560;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .control-item {
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .control-item strong {
+            color: #fff;
+        }
+        .btn {
+            width: 100%;
+            padding: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #5568d3;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #667eea;
+        }
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(102, 126, 234, 0.2);
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            border-radius: 12px;
+            padding: 15px 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            font-size: 13px;
+        }
+        .info-panel p {
+            margin: 5px 0;
+            color: #aaa;
+        }
+        .info-panel strong {
+            color: #fff;
+        }
+        .placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #666;
+        }
+        .placeholder h2 {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .placeholder p {
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📺 被控端 - DXF 3D 查看器</h1>
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span class="status-text" id="statusText">未连接</span>
+            </div>
+        </div>
+
+        <div class="viewer-container">
+            <div id="dxfViewer"></div>
+            
+            <div class="placeholder" id="placeholder">
+                <h2>🎨</h2>
+                <p>等待主控端发送 DXF 文件...</p>
+                <p style="font-size: 14px; margin-top: 10px; color: #888;">WebSocket 连接中</p>
+            </div>
+
+            <div class="loading" id="loading" style="display: none;">
+                <div class="loading-spinner"></div>
+                <p>正在加载 DXF 文件...</p>
+            </div>
+
+            <div class="controls">
+                <h3>🎮 控制</h3>
+                <div class="control-item">
+                    <strong>旋转:</strong> 左键拖动
+                </div>
+                <div class="control-item">
+                    <strong>平移:</strong> 右键拖动
+                </div>
+                <div class="control-item">
+                    <strong>缩放:</strong> 滚轮
+                </div>
+                <button class="btn" onclick="resetView()">重置视图</button>
+                <button class="btn" onclick="toggleWireframe()">切换线框</button>
+            </div>
+
+            <div class="info-panel" id="infoPanel" style="display: none;">
+                <p><strong>文件名:</strong> <span id="fileName">-</span></p>
+                <p><strong>图形数:</strong> <span id="shapeCount">-</span></p>
+                <p><strong>引擎:</strong> <span id="engine">-</span></p>
+                <p><strong>大小:</strong> <span id="fileSize">-</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/",
+            "three-dxf-viewer": "https://cdn.jsdelivr.net/npm/three-dxf-viewer@1.0.44/dist/three-dxf-viewer.js"
+        }
+    }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.min.js"></script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const WS_URL = 'ws://localhost:8080/ws/render';
+        let ws = null;
+        let scene, camera, renderer, controls;
+        let currentMesh = null;
+        let wireframeMode = false;
+
+        // 初始化 Three.js 场景
+        function initThreeJS() {
+            const container = document.getElementById('dxfViewer');
+            
+            // 场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a14);
+            
+            // 相机
+            camera = new THREE.PerspectiveCamera(
+                75,
+                container.clientWidth / container.clientHeight,
+                0.1,
+                10000
+            );
+            camera.position.set(500, 500, 500);
+            camera.lookAt(0, 0, 0);
+            
+            // 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            
+            // 控制器
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // 光照
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 100);
+            scene.add(directionalLight);
+            
+            // 网格
+            const gridHelper = new THREE.GridHelper(1000, 20, 0x667eea, 0x1a1a2e);
+            scene.add(gridHelper);
+            
+            // 坐标轴
+            const axesHelper = new THREE.AxesHelper(200);
+            scene.add(axesHelper);
+            
+            // 窗口大小调整
+            window.addEventListener('resize', onWindowResize);
+            
+            // 动画循环
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('dxfViewer');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // 加载 DXF 文件
+        function loadDXF(base64Data) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('placeholder').style.display = 'none';
+            
+            try {
+                // 解码 base64
+                const dxfString = atob(base64Data);
+                
+                // 解析 DXF
+                const parser = new window.DxfParser();
+                const dxf = parser.parseSync(dxfString);
+                
+                console.log('DXF 解析结果:', dxf);
+                
+                // 清除旧的网格
+                if (currentMesh) {
+                    scene.remove(currentMesh);
+                }
+                
+                // 创建几何体组
+                const group = new THREE.Group();
+                
+                // 解析实体
+                if (dxf.entities) {
+                    dxf.entities.forEach(entity => {
+                        const mesh = createEntityMesh(entity);
+                        if (mesh) {
+                            group.add(mesh);
+                        }
+                    });
+                }
+                
+                currentMesh = group;
+                scene.add(group);
+                
+                // 自动调整相机
+                fitCameraToObject(group);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('infoPanel').style.display = 'block';
+                
+            } catch (error) {
+                console.error('DXF 加载失败:', error);
+                document.getElementById('loading').style.display = 'none';
+                alert('DXF 文件加载失败: ' + error.message);
+            }
+        }
+
+        // 创建实体网格
+        function createEntityMesh(entity) {
+            const material = new THREE.LineBasicMaterial({
+                color: entity.color ? getColorFromACI(entity.color) : 0xffffff
+            });
+            
+            switch (entity.type) {
+                case 'LINE':
+                    return createLine(entity, material);
+                case 'CIRCLE':
+                    return createCircle(entity, material);
+                case 'ARC':
+                    return createArc(entity, material);
+                case 'POLYLINE':
+                case 'LWPOLYLINE':
+                    return createPolyline(entity, material);
+                default:
+                    console.log('不支持的实体类型:', entity.type);
+                    return null;
+            }
+        }
+
+        function createLine(entity, material) {
+            const points = [
+                new THREE.Vector3(entity.vertices[0].x, entity.vertices[0].y, entity.vertices[0].z || 0),
+                new THREE.Vector3(entity.vertices[1].x, entity.vertices[1].y, entity.vertices[1].z || 0)
+            ];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            return new THREE.Line(geometry, material);
+        }
+
+        function createCircle(entity, material) {
+            const curve = new THREE.EllipseCurve(
+                entity.center.x, entity.center.y,
+                entity.radius, entity.radius,
+                0, 2 * Math.PI,
+                false, 0
+            );
+            const points = curve.getPoints(50);
+            const points3d = points.map(p => new THREE.Vector3(p.x, p.y, entity.center.z || 0));
+            const geometry = new THREE.BufferGeometry().setFromPoints(points3d);
+            return new THREE.Line(geometry, material);
+        }
+
+        function createArc(entity, material) {
+            const startAngle = entity.startAngle * Math.PI / 180;
+            const endAngle = entity.endAngle * Math.PI / 180;
+            const curve = new THREE.EllipseCurve(
+                entity.center.x, entity.center.y,
+                entity.radius, entity.radius,
+                startAngle, endAngle,
+                false, 0
+            );
+            const points = curve.getPoints(50);
+            const points3d = points.map(p => new THREE.Vector3(p.x, p.y, entity.center.z || 0));
+            const geometry = new THREE.BufferGeometry().setFromPoints(points3d);
+            return new THREE.Line(geometry, material);
+        }
+
+        function createPolyline(entity, material) {
+            const points = entity.vertices.map(v => 
+                new THREE.Vector3(v.x, v.y, v.z || 0)
+            );
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            return new THREE.Line(geometry, material);
+        }
+
+        function getColorFromACI(aci) {
+            // AutoCAD 颜色索引转换（简化版）
+            const colors = {
+                1: 0xff0000, 2: 0xffff00, 3: 0x00ff00, 4: 0x00ffff,
+                5: 0x0000ff, 6: 0xff00ff, 7: 0xffffff
+            };
+            return colors[aci] || 0xffffff;
+        }
+
+        function fitCameraToObject(object) {
+            const box = new THREE.Box3().setFromObject(object);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+            cameraZ *= 1.5;
+            
+            camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
+            camera.lookAt(center);
+            controls.target.copy(center);
+            controls.update();
+        }
+
+        // 控制函数
+        window.resetView = function() {
+            if (currentMesh) {
+                fitCameraToObject(currentMesh);
+            }
+        };
+
+        window.toggleWireframe = function() {
+            wireframeMode = !wireframeMode;
+            if (currentMesh) {
+                currentMesh.traverse(child => {
+                    if (child.material) {
+                        child.material.wireframe = wireframeMode;
+                    }
+                });
+            }
+        };
+
+        // WebSocket 连接
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                updateStatus('已连接', true);
+                console.log('WebSocket 连接成功');
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+            
+            ws.onerror = () => {
+                updateStatus('连接错误', false);
+            };
+            
+            ws.onclose = () => {
+                updateStatus('连接断开', false);
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        function handleMessage(msg) {
+            console.log('收到消息:', msg);
+            
+            switch(msg.type) {
+                case 'connected':
+                    updateStatus(`已连接 (${msg.total_clients} 客户端)`, true);
+                    break;
+                    
+                case 'result':
+                    if (msg.format === 'dxf_base64' && msg.data) {
+                        loadDXF(msg.data);
+                        updateInfo(msg);
+                    }
+                    break;
+                    
+                case 'preview':
+                    // 预览消息暂时忽略，只显示 DXF
+                    break;
+                    
+                case 'error':
+                    alert('错误: ' + msg.msg);
+                    break;
+            }
+        }
+
+        function updateStatus(text, connected) {
+            document.getElementById('statusText').textContent = text;
+            const dot = document.getElementById('statusDot');
+            if (connected) {
+                dot.classList.add('connected');
+            } else {
+                dot.classList.remove('connected');
+            }
+        }
+
+        function updateInfo(msg) {
+            document.getElementById('fileName').textContent = msg.filename || '-';
+            document.getElementById('shapeCount').textContent = msg.shape_count || '-';
+            document.getElementById('engine').textContent = msg.engine_used || '-';
+            document.getElementById('fileSize').textContent = 
+                msg.size_bytes ? (msg.size_bytes / 1024).toFixed(2) + ' KB' : '-';
+        }
+
+        // 启动
+        initThreeJS();
+        connectWebSocket();
+    </script>
+</body>
+</html>

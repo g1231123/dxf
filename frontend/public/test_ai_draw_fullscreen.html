@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI CAD 绘图工作台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .app {
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* 左侧控制面板 */
+        .sidebar {
+            width: 400px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 22px;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        
+        .panel {
+            padding: 20px;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e94560;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        label {
+            display: block;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0f3460;
+            border: 1px solid #1a1a2e;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        
+        .row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .row-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        
+        /* 图形类型标签 */
+        .shape-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            background: #0f3460;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            color: #aaa;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab-btn:hover {
+            background: #1a1a2e;
+        }
+        
+        .tab-btn.active {
+            background: #e94560;
+            color: white;
+            border-color: #e94560;
+        }
+        
+        .shape-panel {
+            display: none;
+        }
+        
+        .shape-panel.active {
+            display: block;
+        }
+        
+        /* 按钮 */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #0f3460;
+            color: #fff;
+        }
+        
+        .btn-secondary:hover {
+            background: #1a1a2e;
+        }
+        
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        /* 右侧工作区 */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 引擎状态栏 */
+        .status-bar {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .engine-status {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .status-dot.online { background: #4CAF50; }
+        .status-dot.offline { background: #f44336; }
+        .status-dot.warning { background: #ff9800; }
+        
+        /* Canvas 区域 */
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+        }
+        
+        .preview-box {
+            flex: 1;
+            background: #16213e;
+            border-radius: 12px;
+            border: 2px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .preview-header {
+            background: #0f3460;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .preview-content {
+            flex: 1;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        #shapeCanvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        /* QGIS 渲染预览 */
+        .qgis-preview {
+            width: 400px;
+            background: #16213e;
+            border-radius: 12px;
+            border: 2px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #qgisRenderResult {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #0a0a14;
+        }
+        
+        #qgisRenderResult img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        /* 底部日志 */
+        .log-panel {
+            height: 200px;
+            background: #0a0a14;
+            border-top: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .log-header {
+            background: #16213e;
+            padding: 10px 20px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 20px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .log-time { color: #666; margin-right: 10px; }
+        .log-sent { color: #4ec9b0; }
+        .log-received { color: #ce9178; }
+        .log-error { color: #f48771; }
+        
+        /* 结果面板 */
+        .result-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 350px;
+            background: #16213e;
+            border-radius: 12px;
+            border: 2px solid #e94560;
+            padding: 20px;
+            display: none;
+            z-index: 100;
+        }
+        
+        .result-panel.show {
+            display: block;
+        }
+        
+        .engine-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .engine-badge.autocad { background: #1976d2; color: white; }
+        .engine-badge.ezdxf { background: #388e3c; color: white; }
+        .engine-badge.qgis { background: #f57c00; color: white; }
+        
+        .warning-box {
+            background: rgba(255, 152, 0, 0.1);
+            border: 1px solid #ff9800;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        
+        .warning-box strong {
+            color: #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- 左侧控制面板 -->
+        <div class="sidebar">
+            <div class="header">
+                <h1>🎨 AI CAD 绘图工作台</h1>
+                <p>WebSocket 实时绘图 | 支持 AutoCAD / ezdxf / QGIS</p>
+            </div>
+            
+            <!-- 连接设置 -->
+            <div class="panel">
+                <div class="panel-title">⚡ 连接设置</div>
+                <div class="form-group">
+                    <label>WebSocket 地址</label>
+                    <input type="text" id="wsUrl" value="ws://103.39.221.54:10792/ws/render">
+                </div>
+                <div class="row">
+                    <button class="btn btn-primary" onclick="connect()">🔗 连接</button>
+                    <button class="btn btn-secondary" onclick="disconnect()">断开</button>
+                </div>
+            </div>
+            
+            <!-- 引擎选择 -->
+            <div class="panel">
+                <div class="panel-title">🖥️ 绘图引擎</div>
+                <div class="warning-box">
+                    <strong>⚠️ 注意：</strong><br>
+                    • AutoCAD COM 只能在 <strong>Windows + AutoCAD 运行中</strong> 使用<br>
+                    • macOS/Linux 自动回退到 ezdxf<br>
+                    • ezdxf 不支持文字标注（需用 QGIS 渲染预览）
+                </div>
+                <div class="form-group">
+                    <select id="engine">
+                        <option value="">🔄 自动选择</option>
+                        <option value="autocad">🖥️ AutoCAD COM (Windows)</option>
+                        <option value="ezdxf" selected>📦 ezdxf (当前可用)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- 图形类型 -->
+            <div class="panel">
+                <div class="panel-title">📐 图形类型</div>
+                <div class="shape-tabs">
+                    <button class="tab-btn active" onclick="switchShape('circle')" id="tab-circle">⭕ 圆</button>
+                    <button class="tab-btn" onclick="switchShape('rectangle')" id="tab-rectangle">▭ 长方形</button>
+                    <button class="tab-btn" onclick="switchShape('square')" id="tab-square">⬜ 正方形</button>
+                </div>
+                
+                <!-- 圆参数 -->
+                <div class="shape-panel active" id="panel-circle">
+                    <div class="row-3">
+                        <div class="form-group">
+                            <label>圆心 X</label>
+                            <input type="number" id="cx" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>圆心 Y</label>
+                            <input type="number" id="cy" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>半径</label>
+                            <input type="number" id="r" value="50" min="0.1">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 长方形参数 -->
+                <div class="shape-panel" id="panel-rectangle">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>起点 X</label>
+                            <input type="number" id="rectX" value="50">
+                        </div>
+                        <div class="form-group">
+                            <label>起点 Y</label>
+                            <input type="number" id="rectY" value="50">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>宽度</label>
+                            <input type="number" id="rectW" value="150">
+                        </div>
+                        <div class="form-group">
+                            <label>高度</label>
+                            <input type="number" id="rectH" value="100">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>旋转角度 (°)</label>
+                        <input type="number" id="rectRotation" value="0" step="5">
+                    </div>
+                </div>
+                
+                <!-- 正方形参数 -->
+                <div class="shape-panel" id="panel-square">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>起点 X</label>
+                            <input type="number" id="squareX" value="75">
+                        </div>
+                        <div class="form-group">
+                            <label>起点 Y</label>
+                            <input type="number" id="squareY" value="75">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>边长</label>
+                            <input type="number" id="squareSize" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>旋转角度</label>
+                            <input type="number" id="squareRotation" value="0" step="5">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 样式与名称 -->
+            <div class="panel">
+                <div class="panel-title">🎨 样式与标注</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>边框颜色</label>
+                        <input type="text" id="color" value="#FF0000">
+                    </div>
+                    <div class="form-group">
+                        <label>填充颜色</label>
+                        <input type="text" id="fillColor" value="#FF000033">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>🏷️ 图形名称/标注（在 QGIS 预览中显示）</label>
+                    <input type="text" id="shapeName" value="" placeholder="例如：客厅、卧室A1">
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>名称位置</label>
+                        <select id="namePosition">
+                            <option value="center">中心</option>
+                            <option value="top">顶部</option>
+                            <option value="bottom">底部</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>输出格式</label>
+                        <select id="outputFormat">
+                            <option value="dxf">DXF</option>
+                            <option value="dwg">DWG</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 操作按钮 -->
+            <div class="panel">
+                <button class="btn btn-primary" onclick="sendDrawShape()">🎨 绘制图形</button>
+                <button class="btn btn-success" onclick="renderWithQGIS()">🗺️ QGIS 渲染预览</button>
+                <button class="btn btn-secondary" onclick="clearLog()">🗑️ 清空日志</button>
+            </div>
+        </div>
+        
+        <!-- 右侧工作区 -->
+        <div class="workspace">
+            <!-- 状态栏 -->
+            <div class="status-bar">
+                <div class="engine-status">
+                    <div class="status-item">
+                        <span class="status-dot offline" id="wsStatus"></span>
+                        <span>WebSocket</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-dot warning" id="engineStatus"></span>
+                        <span id="engineName">ezdxf (文字不支持)</span>
+                    </div>
+                </div>
+                <div>
+                    <span id="previewInfo" style="font-size: 13px; color: #aaa;">圆心: (100, 100) | 半径: 50</span>
+                </div>
+            </div>
+            
+            <!-- Canvas + QGIS 预览 -->
+            <div class="canvas-container">
+                <!-- Canvas 实时预览 -->
+                <div class="preview-box">
+                    <div class="preview-header">
+                        <span>🎯 Canvas 实时预览</span>
+                        <span id="canvasLabel" style="font-size: 12px; color: #aaa;">2D 几何图形</span>
+                    </div>
+                    <div class="preview-content">
+                        <canvas id="shapeCanvas" width="600" height="500"></canvas>
+                    </div>
+                </div>
+                
+                <!-- QGIS 渲染预览 -->
+                <div class="qgis-preview">
+                    <div class="preview-header">
+                        <span>🗺️ QGIS 渲染预览</span>
+                        <span style="font-size: 12px; color: #aaa;">服务端渲染</span>
+                    </div>
+                    <div id="qgisRenderResult">
+                        <div style="color: #666; text-align: center;">
+                            <p>点击 "QGIS 渲染预览"</p>
+                            <p style="font-size: 12px; margin-top: 10px;">使用 QGIS 渲染 DXF 文件<br>支持文字标注显示</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 日志面板 -->
+            <div class="log-panel">
+                <div class="log-header">
+                    <span>📋 通信日志</span>
+                    <span style="color: #666; font-size: 11px;">WebSocket 消息记录</span>
+                </div>
+                <div class="log-container" id="logContainer">
+                    <div class="log-entry" style="color: #666;">等待连接...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 结果弹窗 -->
+    <div class="result-panel" id="resultPanel">
+        <h3 style="margin-bottom: 15px; color: #e94560;">✅ 绘制完成</h3>
+        <div id="resultContent"></div>
+        <button class="btn btn-success" onclick="downloadFile()" style="margin-top: 15px;">⬇️ 下载文件</button>
+        <button class="btn btn-secondary" onclick="closeResult()" style="margin-top: 10px;">关闭</button>
+    </div>
+
+    <script>
+        // ... (保留原有 JavaScript 代码，添加 QGIS 渲染功能)
+        let ws = null;
+        let lastResult = null;
+        let currentShape = 'circle';
+        let currentFileId = null;
+
+        function getTime() {
+            return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        }
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const typeClass = type === 'sent' ? 'log-sent' : type === 'error' ? 'log-error' : type === 'received' ? 'log-received' : '';
+            entry.innerHTML = `<span class="log-time">[${getTime()}]</span><span class="${typeClass}">${message}</span>`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateWsStatus(connected) {
+            const dot = document.getElementById('wsStatus');
+            dot.className = 'status-dot ' + (connected ? 'online' : 'offline');
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('已经连接', 'error');
+                return;
+            }
+
+            const url = document.getElementById('wsUrl').value;
+            log(`正在连接: ${url}`, 'info');
+
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                updateWsStatus(true);
+                log('✅ WebSocket 连接成功', 'received');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleMessage(msg);
+                } catch (e) {
+                    log(`收到: ${event.data.substring(0, 100)}...`, 'received');
+                }
+            };
+
+            ws.onerror = () => {
+                updateWsStatus(false);
+                log('❌ WebSocket 错误', 'error');
+            };
+
+            ws.onclose = () => {
+                updateWsStatus(false);
+                log('🔌 连接已关闭', 'error');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleMessage(msg) {
+            if (msg.type === 'connected') {
+                log(`服务端就绪 (ID: ${msg.client_id})`, 'info');
+            } else if (msg.type === 'result') {
+                lastResult = msg;
+                currentFileId = msg.filename;
+                
+                // 更新引擎状态显示
+                const engineDot = document.getElementById('engineStatus');
+                const engineName = document.getElementById('engineName');
+                engineDot.className = 'status-dot ' + (msg.engine_used === 'autocad' ? 'online' : 'warning');
+                engineName.textContent = msg.engine_used === 'autocad' ? 'AutoCAD COM' : 'ezdxf (文字不支持)';
+                
+                showResult(msg);
+                log(`✅ 完成! 引擎: ${msg.engine_used}, 文件: ${msg.filename}`, 'received');
+            } else if (msg.type === 'error') {
+                log(`❌ ${msg.code}: ${msg.msg}`, 'error');
+            }
+        }
+
+        function showResult(msg) {
+            const panel = document.getElementById('resultPanel');
+            const content = document.getElementById('resultContent');
+            
+            const badge = msg.engine_used === 'autocad' 
+                ? '<span class="engine-badge autocad">AutoCAD</span>'
+                : '<span class="engine-badge ezdxf">ezdxf</span>';
+            
+            content.innerHTML = `
+                <p><strong>引擎:</strong> ${badge}</p>
+                <p><strong>文件:</strong> ${msg.filename}</p>
+                <p><strong>大小:</strong> ${msg.size_bytes} bytes</p>
+                <p><strong>图形:</strong> ${msg.success_count} 个成功</p>
+            `;
+            
+            panel.classList.add('show');
+        }
+
+        function closeResult() {
+            document.getElementById('resultPanel').classList.remove('show');
+        }
+
+        function downloadFile() {
+            if (!lastResult || !lastResult.data) return;
+            
+            const bytes = atob(lastResult.data);
+            const arr = new Uint8Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+            
+            const blob = new Blob([arr], { type: 'application/dxf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = lastResult.filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            log(`⬇️ 已下载: ${lastResult.filename}`, 'info');
+        }
+
+        // 切换图形类型
+        function switchShape(shape) {
+            currentShape = shape;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.shape-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`tab-${shape}`).classList.add('active');
+            document.getElementById(`panel-${shape}`).classList.add('active');
+            updatePreview();
+        }
+
+        // Canvas 绘制函数
+        function updatePreview() {
+            const canvas = document.getElementById('shapeCanvas');
+            const ctx = canvas.getContext('2d');
+            const color = document.getElementById('color').value;
+            const fill = document.getElementById('fillColor').value;
+            const name = document.getElementById('shapeName').value;
+            
+            // 清空
+            ctx.fillStyle = '#0a0a14';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制网格
+            ctx.strokeStyle = '#1a1a2e';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 50) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+            }
+            
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            
+            if (currentShape === 'circle') {
+                const r = parseFloat(document.getElementById('r').value) || 50;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+                if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                document.getElementById('previewInfo').textContent = `圆心: (100, 100) | 半径: ${r}`;
+            } else if (currentShape === 'rectangle') {
+                const w = parseFloat(document.getElementById('rectW').value) || 150;
+                const h = parseFloat(document.getElementById('rectH').value) || 100;
+                const rot = parseFloat(document.getElementById('rectRotation').value) || 0;
+                
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(rot * Math.PI / 180);
+                if (fill) { ctx.fillStyle = fill; ctx.fillRect(-w/2, -h/2, w, h); }
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(-w/2, -h/2, w, h);
+                ctx.restore();
+                document.getElementById('previewInfo').textContent = `宽: ${w} | 高: ${h} | 旋转: ${rot}°`;
+            } else if (currentShape === 'square') {
+                const s = parseFloat(document.getElementById('squareSize').value) || 100;
+                const rot = parseFloat(document.getElementById('squareRotation').value) || 0;
+                
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(rot * Math.PI / 180);
+                if (fill) { ctx.fillStyle = fill; ctx.fillRect(-s/2, -s/2, s, s); }
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(-s/2, -s/2, s, s);
+                ctx.restore();
+                document.getElementById('previewInfo').textContent = `边长: ${s} | 旋转: ${rot}°`;
+            }
+            
+            // 绘制名称
+            if (name) {
+                ctx.fillStyle = color;
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(name, cx, cy);
+            }
+        }
+
+        // 发送绘制请求
+        function sendDrawShape() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('请先连接 WebSocket');
+                return;
+            }
+
+            const color = document.getElementById('color').value;
+            const fill = document.getElementById('fillColor').value;
+            const name = document.getElementById('shapeName').value;
+            const engine = document.getElementById('engine').value;
+            
+            let shape = null;
+            
+            if (currentShape === 'circle') {
+                shape = {
+                    id: 'c' + Date.now(),
+                    type: 'circle',
+                    layer: 'AI_SHAPES',
+                    geometry: {
+                        cx: parseFloat(document.getElementById('cx').value) || 100,
+                        cy: parseFloat(document.getElementById('cy').value) || 100,
+                        r: parseFloat(document.getElementById('r').value) || 50
+                    },
+                    style: { stroke_color: color, fill_color: fill }
+                };
+            } else if (currentShape === 'rectangle') {
+                shape = {
+                    id: 'r' + Date.now(),
+                    type: 'rectangle',
+                    layer: 'AI_SHAPES',
+                    geometry: {
+                        x: parseFloat(document.getElementById('rectX').value) || 50,
+                        y: parseFloat(document.getElementById('rectY').value) || 50,
+                        width: parseFloat(document.getElementById('rectW').value) || 150,
+                        height: parseFloat(document.getElementById('rectH').value) || 100,
+                        rotation: parseFloat(document.getElementById('rectRotation').value) || 0
+                    },
+                    style: { stroke_color: color, fill_color: fill }
+                };
+            } else if (currentShape === 'square') {
+                const s = parseFloat(document.getElementById('squareSize').value) || 100;
+                shape = {
+                    id: 's' + Date.now(),
+                    type: 'rectangle',
+                    layer: 'AI_SHAPES',
+                    geometry: {
+                        x: parseFloat(document.getElementById('squareX').value) || 75,
+                        y: parseFloat(document.getElementById('squareY').value) || 75,
+                        width: s,
+                        height: s,
+                        rotation: parseFloat(document.getElementById('squareRotation').value) || 0
+                    },
+                    style: { stroke_color: color, fill_color: fill }
+                };
+            }
+            
+            // 如果有名称，添加文字图形
+            const shapes = [shape];
+            if (name) {
+                let textX = shape.geometry.cx || shape.geometry.x + shape.geometry.width/2;
+                let textY = shape.geometry.cy || shape.geometry.y + shape.geometry.height/2;
+                
+                shapes.push({
+                    id: 't' + Date.now(),
+                    type: 'text',
+                    layer: 'AI_SHAPES',
+                    geometry: { x: textX, y: textY },
+                    style: { text: name, color: color, font_size: 14 }
+                });
+            }
+            
+            const request = {
+                type: 'ai_edit',
+                output_format: document.getElementById('outputFormat').value,
+                shapes: shapes
+            };
+            if (engine) request.engine = engine;
+            
+            ws.send(JSON.stringify(request));
+            log(`➡️ 发送 ${currentShape} 绘制请求${name ? ' (含文字: ' + name + ')' : ''}`, 'sent');
+        }
+
+        // QGIS 渲染预览
+        async function renderWithQGIS() {
+            if (!lastResult || !lastResult.data) {
+                alert('请先绘制图形');
+                return;
+            }
+            
+            log('🗺️ 正在请求 QGIS 渲染...', 'info');
+            
+            try {
+                // 1. 上传 DXF 文件
+                const bytes = atob(lastResult.data);
+                const arr = new Uint8Array(bytes.length);
+                for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+                
+                const blob = new Blob([arr], { type: 'application/dxf' });
+                const formData = new FormData();
+                formData.append('file', blob, lastResult.filename);
+                
+                const uploadRes = await fetch('http://103.39.221.54:10792/data/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const uploadData = await uploadRes.json();
+                const fileId = uploadData.file_id;
+                
+                log(`📤 已上传文件，ID: ${fileId}`, 'info');
+                
+                // 2. 请求 QGIS 渲染
+                const renderRes = await fetch(`http://103.39.221.54:10792/render/${fileId}?width=800&height=600`);
+                const renderBlob = await renderRes.blob();
+                
+                // 3. 显示渲染结果
+                const imgUrl = URL.createObjectURL(renderBlob);
+                document.getElementById('qgisRenderResult').innerHTML = 
+                    `<img src="${imgUrl}" alt="QGIS Render">`;
+                
+                log('✅ QGIS 渲染完成', 'received');
+            } catch (e) {
+                log('❌ QGIS 渲染失败: ' + e.message, 'error');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('logContainer').innerHTML = '';
+        }
+
+        // 初始化
+        window.onload = () => {
+            log('🎨 AI CAD 绘图工作台已就绪', 'info');
+            log('提示：macOS 只能使用 ezdxf 引擎，文字标注需在 QGIS 预览中查看', 'info');
+            updatePreview();
+            
+            // 监听所有输入变化
+            document.querySelectorAll('input, select').forEach(el => {
+                el.addEventListener('input', updatePreview);
+            });
+        };
+    </script>
+</body>
+</html>

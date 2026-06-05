@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DXF/DWG 查看器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        .header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .header h1 { font-size: 20px; font-weight: 700; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .status-badge {
+            display: flex; align-items: center; gap: 8px;
+            background: rgba(0,0,0,0.25);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+        }
+        .dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: #f44336;
+            animation: pulse 2s infinite;
+        }
+        .dot.on { background: #4caf50; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+        /* ── Body ── */
+        .body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: 280px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar-section {
+            padding: 16px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .sidebar-section h3 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        /* 上传区 */
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 24px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .upload-area:hover { background: rgba(102,126,234,0.1); }
+        .upload-area.dragover { background: rgba(102,126,234,0.2); border-color: #fff; }
+        .upload-area p { font-size: 13px; color: #aaa; margin-top: 8px; }
+        .upload-area .icon { font-size: 32px; }
+        #fileInput { display: none; }
+
+        /* 文件信息 */
+        .file-info {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 12px;
+            display: none;
+        }
+        .file-info p { margin: 3px 0; color: #ccc; }
+        .file-info strong { color: #fff; }
+
+        /* 图层列表 */
+        .layer-list { max-height: 160px; overflow-y: auto; }
+        .layer-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 5px 4px;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .layer-item:hover { background: rgba(255,255,255,0.05); }
+        .layer-item input[type=checkbox] { cursor: pointer; }
+        .layer-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* 视图控制 */
+        .view-controls { display: flex; flex-direction: column; gap: 10px; }
+        .slider-row label {
+            display: flex; justify-content: space-between;
+            font-size: 12px; color: #aaa; margin-bottom: 4px;
+        }
+        input[type=range] {
+            width: 100%; accent-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 10px;
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 6px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #5568d3; }
+        .btn.secondary { background: #0f3460; }
+        .btn.secondary:hover { background: #1a3a6e; }
+
+        /* 实体统计 */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .stat-item {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 8px 10px;
+            text-align: center;
+        }
+        .stat-item .val { font-size: 22px; font-weight: 700; color: #667eea; }
+        .stat-item .lbl { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+        /* ── Canvas 区域 ── */
+        .canvas-wrap {
+            flex: 1;
+            position: relative;
+            background: #0a0a14;
+            overflow: hidden;
+        }
+        #c {
+            position: absolute;
+            top: 0; left: 0;
+            cursor: grab;
+        }
+        #c.grabbing { cursor: grabbing; }
+
+        /* Placeholder */
+        .placeholder {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            text-align: center;
+            color: #444;
+            pointer-events: none;
+        }
+        .placeholder .big { font-size: 64px; }
+        .placeholder p { font-size: 15px; margin-top: 12px; }
+
+        /* Loading */
+        .loading-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(10,10,20,0.8);
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .loading-overlay.show { display: flex; }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid rgba(102,126,234,0.2);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-overlay p { color: #aaa; font-size: 14px; }
+
+        /* Tooltip */
+        #tooltip {
+            display: none;
+            position: fixed;
+            background: rgba(22,33,62,0.96);
+            border: 1px solid #667eea;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 100;
+            max-width: 220px;
+        }
+        #tooltip p { margin: 2px 0; color: #ccc; }
+        #tooltip strong { color: #fff; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>📐 DXF / DWG 查看器</h1>
+    <div class="header-right">
+        <div class="status-badge">
+            <div class="dot" id="dot"></div>
+            <span id="statusTxt">未连接</span>
+        </div>
+    </div>
+</div>
+
+<div class="body">
+    <!-- 侧栏 -->
+    <div class="sidebar">
+
+        <!-- 上传 -->
+        <div class="sidebar-section">
+            <h3>📂 上传文件</h3>
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                <div class="icon">📁</div>
+                <p>点击或拖放 DXF / DWG 文件</p>
+            </div>
+            <input type="file" id="fileInput" accept=".dxf,.dwg">
+            <div class="file-info" id="fileInfo">
+                <p><strong>文件:</strong> <span id="fiName">-</span></p>
+                <p><strong>大小:</strong> <span id="fiSize">-</span></p>
+                <p><strong>实体:</strong> <span id="fiCount">-</span></p>
+            </div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="sidebar-section">
+            <h3>📊 实体统计</h3>
+            <div class="stat-grid">
+                <div class="stat-item"><div class="val" id="sCnt">0</div><div class="lbl">总计</div></div>
+                <div class="stat-item"><div class="val" id="sLine">0</div><div class="lbl">直线</div></div>
+                <div class="stat-item"><div class="val" id="sCircle">0</div><div class="lbl">圆/弧</div></div>
+                <div class="stat-item"><div class="val" id="sPoly">0</div><div class="lbl">多段线</div></div>
+                <div class="stat-item"><div class="val" id="sText">0</div><div class="lbl">文字</div></div>
+                <div class="stat-item"><div class="val" id="sOther">0</div><div class="lbl">其他</div></div>
+            </div>
+        </div>
+
+        <!-- 图层 -->
+        <div class="sidebar-section">
+            <h3>🗂️ 图层</h3>
+            <div class="layer-list" id="layerList">
+                <p style="font-size:12px;color:#666">上传文件后显示</p>
+            </div>
+        </div>
+
+        <!-- 视图控制 -->
+        <div class="sidebar-section">
+            <h3>🎮 视图控制</h3>
+            <div class="view-controls">
+                <div class="slider-row">
+                    <label>缩放 <span id="zoomLbl">1.0x</span></label>
+                    <input type="range" id="zoomSlider" min="0.05" max="20" step="0.05" value="1">
+                </div>
+                <button class="btn" onclick="fitView()">适应视图</button>
+                <button class="btn secondary" onclick="resetView()">重置</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="c"></canvas>
+
+        <div class="placeholder" id="ph">
+            <div class="big">📐</div>
+            <p>上传 DXF 或 DWG 文件开始查看</p>
+        </div>
+
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="spinner"></div>
+            <p id="loadingTxt">正在解析文件...</p>
+        </div>
+    </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const WS_URL = 'ws://localhost:8080/ws/render';
+
+// ── 状态 ──────────────────────────────────────────────────────
+let ws = null;
+let entities = [];          // 全部实体
+let visibleLayers = new Set(); // 当前可见图层
+let zoom = 1, panX = 0, panY = 0;
+let bounds = { minX:0, maxX:100, minY:0, maxY:100 };
+let isDragging = false, dragStartX, dragStartY, panStartX, panStartY;
+let hoveredEntity = null;
+
+// ACI 颜色表（部分）
+const ACI = {
+    1:'#FF0000',2:'#FFFF00',3:'#00FF00',4:'#00FFFF',
+    5:'#0000FF',6:'#FF00FF',7:'#FFFFFF',8:'#808080',
+    9:'#C0C0C0',10:'#FF0000',11:'#FF7F7F',12:'#CC0000',
+    13:'#CC7F7f',14:'#990000',15:'#9F7F7F',16:'#FF3F00',
+    30:'#FF7F00',40:'#FFBF00',50:'#FFFF00',60:'#BFFF00',
+    70:'#7FFF00',80:'#3FFF00',90:'#00FF00',100:'#00FF40',
+    110:'#00FF80',120:'#00FFBF',130:'#00FFFF',140:'#00BFFF',
+    150:'#007FFF',160:'#0040FF',170:'#0000FF',
+    200:'#7F00FF',210:'#FF00FF',
+};
+function aciColor(c) { return ACI[c] || '#FFFFFF'; }
+
+// 图层颜色（按名字哈希）
+const layerColors = {};
+function layerColor(name) {
+    if (!layerColors[name]) {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+        layerColors[name] = `hsl(${h % 360},70%,60%)`;
+    }
+    return layerColors[name];
+}
+
+// ── Canvas ────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+
+function resizeCanvas() {
+    canvas.width  = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+    render();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ── WebSocket ─────────────────────────────────────────────────
+function connect() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen  = () => setStatus('已连接', true);
+    ws.onclose = () => { setStatus('连接断开', false); setTimeout(connect, 3000); };
+    ws.onerror = () => setStatus('连接错误', false);
+    ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'connected') setStatus(`已连接 (${msg.total_clients} 客户端)`, true);
+        if (msg.type === 'parsed')    onParsed(msg);
+        if (msg.type === 'error')     { hideLoading(); alert('错误: ' + msg.msg); }
+    };
+}
+
+function setStatus(txt, on) {
+    document.getElementById('statusTxt').textContent = txt;
+    document.getElementById('dot').className = 'dot' + (on ? ' on' : '');
+}
+
+// ── 文件上传 ──────────────────────────────────────────────────
+const fileInput = document.getElementById('fileInput');
+const uploadArea = document.getElementById('uploadArea');
+
+fileInput.addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('WebSocket 未连接，请等待连接后再上传');
+        return;
+    }
+    showLoading('正在解析文件...');
+    document.getElementById('ph').style.display = 'none';
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(e.target.result)));
+        ws.send(JSON.stringify({ type: 'parse', filename: file.name, file_data: b64 }));
+    };
+    reader.readAsArrayBuffer(file);
+
+    document.getElementById('fiName').textContent = file.name;
+    document.getElementById('fiSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+    document.getElementById('fileInfo').style.display = 'block';
+}
+
+// ── 解析结果处理 ──────────────────────────────────────────────
+function onParsed(msg) {
+    hideLoading();
+    entities = msg.entities || [];
+    visibleLayers = new Set(msg.layers || []);
+
+    // 统计
+    let line=0, circle=0, poly=0, text=0, other=0;
+    for (const e of entities) {
+        if (e.type === 'LINE') line++;
+        else if (e.type === 'CIRCLE' || e.type === 'ARC') circle++;
+        else if (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE' || e.type === 'SPLINE') poly++;
+        else if (e.type === 'TEXT' || e.type === 'MTEXT') text++;
+        else other++;
+    }
+    document.getElementById('sCnt').textContent    = entities.length;
+    document.getElementById('sLine').textContent   = line;
+    document.getElementById('sCircle').textContent = circle;
+    document.getElementById('sPoly').textContent   = poly;
+    document.getElementById('sText').textContent   = text;
+    document.getElementById('sOther').textContent  = other;
+    document.getElementById('fiCount').textContent = entities.length;
+
+    // 图层列表
+    buildLayerList(msg.layers || []);
+
+    // 计算边界
+    calcBounds();
+
+    // 自适应视图
+    fitView();
+}
+
+function buildLayerList(layers) {
+    const el = document.getElementById('layerList');
+    el.innerHTML = '';
+    if (!layers.length) { el.innerHTML = '<p style="font-size:12px;color:#666">无图层信息</p>'; return; }
+    for (const name of layers) {
+        const color = layerColor(name);
+        const item = document.createElement('div');
+        item.className = 'layer-item';
+        item.innerHTML = `
+            <input type="checkbox" checked data-layer="${name}">
+            <div class="layer-dot" style="background:${color}"></div>
+            <span style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+        `;
+        item.querySelector('input').addEventListener('change', (e) => {
+            if (e.target.checked) visibleLayers.add(name);
+            else visibleLayers.delete(name);
+            render();
+        });
+        el.appendChild(item);
+    }
+}
+
+// ── 边界计算 ──────────────────────────────────────────────────
+function calcBounds() {
+    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+
+    function expand(x, y) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+
+    for (const e of entities) {
+        if (e.type === 'LINE') {
+            expand(e.start[0], e.start[1]); expand(e.end[0], e.end[1]);
+        } else if (e.type === 'CIRCLE') {
+            expand(e.center[0]-e.radius, e.center[1]-e.radius);
+            expand(e.center[0]+e.radius, e.center[1]+e.radius);
+        } else if (e.type === 'ARC') {
+            expand(e.center[0]-e.radius, e.center[1]-e.radius);
+            expand(e.center[0]+e.radius, e.center[1]+e.radius);
+        } else if (e.points) {
+            for (const p of e.points) expand(p[0], p[1]);
+        } else if (e.insert) {
+            expand(e.insert[0], e.insert[1]);
+        } else if (e.center) {
+            expand(e.center[0], e.center[1]);
+        }
+    }
+
+    if (!isFinite(minX)) { minX=0; maxX=100; minY=0; maxY=100; }
+    bounds = { minX, maxX, minY, maxY };
+}
+
+// ── 视图适配 ──────────────────────────────────────────────────
+function fitView() {
+    const W = canvas.width, H = canvas.height;
+    const bW = bounds.maxX - bounds.minX || 1;
+    const bH = bounds.maxY - bounds.minY || 1;
+    const margin = 0.1;
+    zoom = Math.min(W / (bW * (1 + margin)), H / (bH * (1 + margin)));
+    panX = W/2 - zoom * (bounds.minX + bW/2);
+    panY = H/2 + zoom * (bounds.minY + bH/2);
+    document.getElementById('zoomSlider').value = zoom;
+    document.getElementById('zoomLbl').textContent = zoom.toFixed(2) + 'x';
+    render();
+}
+
+function resetView() {
+    zoom = 1; panX = 0; panY = 0;
+    document.getElementById('zoomSlider').value = 1;
+    document.getElementById('zoomLbl').textContent = '1.0x';
+    render();
+}
+
+// ── 坐标转换 ──────────────────────────────────────────────────
+// DXF坐标 → Canvas坐标（Y轴翻转）
+function tx(x) { return panX + x * zoom; }
+function ty(y) { return panY - y * zoom; }
+
+// ── 渲染 ──────────────────────────────────────────────────────
+function render() {
+    const W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, W, H);
+
+    // 网格
+    drawGrid(W, H);
+
+    if (!entities.length) return;
+
+    ctx.save();
+    for (const ent of entities) {
+        if (!visibleLayers.has(ent.layer)) continue;
+        drawEntity(ent);
+    }
+    ctx.restore();
+}
+
+function drawGrid(W, H) {
+    const step = zoom < 0.5 ? 100 : zoom < 2 ? 50 : 10;
+    const gridStep = step * zoom;
+    if (gridStep < 8) return;
+
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = 1;
+
+    const startX = ((panX % gridStep) + gridStep) % gridStep;
+    for (let x = startX; x < W; x += gridStep) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    const startY = ((panY % gridStep) + gridStep) % gridStep;
+    for (let y = startY; y < H; y += gridStep) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // 原点十字
+    ctx.strokeStyle = '#2a2a4e';
+    ctx.lineWidth = 1;
+    if (panX > 0 && panX < W) {
+        ctx.beginPath(); ctx.moveTo(panX, 0); ctx.lineTo(panX, H); ctx.stroke();
+    }
+    if (panY > 0 && panY < H) {
+        ctx.beginPath(); ctx.moveTo(0, panY); ctx.lineTo(W, panY); ctx.stroke();
+    }
+}
+
+function entityColor(ent) {
+    return aciColor(ent.color);
+}
+
+function drawEntity(ent) {
+    const color = entityColor(ent);
+    const isHovered = ent === hoveredEntity;
+    const lw = isHovered ? 2.5 / zoom : 1 / zoom;
+
+    ctx.strokeStyle = isHovered ? '#ffee00' : color;
+    ctx.fillStyle   = isHovered ? '#ffee00' : color;
+    ctx.lineWidth   = lw;
+
+    switch (ent.type) {
+        case 'LINE':
+            ctx.beginPath();
+            ctx.moveTo(tx(ent.start[0]), ty(ent.start[1]));
+            ctx.lineTo(tx(ent.end[0]),   ty(ent.end[1]));
+            ctx.stroke();
+            break;
+
+        case 'CIRCLE':
+            ctx.beginPath();
+            ctx.arc(tx(ent.center[0]), ty(ent.center[1]), ent.radius * zoom, 0, Math.PI*2);
+            ctx.stroke();
+            break;
+
+        case 'ARC': {
+            const sa = ent.start_angle * Math.PI / 180;
+            const ea = ent.end_angle   * Math.PI / 180;
+            ctx.beginPath();
+            ctx.arc(tx(ent.center[0]), ty(ent.center[1]), ent.radius * zoom, -ea, -sa, false);
+            ctx.stroke();
+            break;
+        }
+
+        case 'ELLIPSE': {
+            const [cx, cy] = [tx(ent.center[0]), ty(ent.center[1])];
+            const maLen = Math.hypot(ent.major_axis[0], ent.major_axis[1]) * zoom;
+            const miLen = maLen * ent.ratio;
+            const angle = Math.atan2(ent.major_axis[1], ent.major_axis[0]);
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(-angle);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, maLen, miLen, 0, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.restore();
+            break;
+        }
+
+        case 'LWPOLYLINE':
+        case 'POLYLINE':
+        case 'SPLINE':
+            if (!ent.points || ent.points.length < 2) break;
+            ctx.beginPath();
+            ctx.moveTo(tx(ent.points[0][0]), ty(ent.points[0][1]));
+            for (let i = 1; i < ent.points.length; i++) {
+                ctx.lineTo(tx(ent.points[i][0]), ty(ent.points[i][1]));
+            }
+            if (ent.closed) ctx.closePath();
+            ctx.stroke();
+            break;
+
+        case 'TEXT':
+        case 'MTEXT': {
+            const fs = Math.max(8, ent.height * zoom);
+            ctx.save();
+            ctx.translate(tx(ent.insert[0]), ty(ent.insert[1]));
+            if (ent.rotation) ctx.rotate(-ent.rotation * Math.PI / 180);
+            ctx.scale(1, 1);
+            ctx.font = `${fs}px sans-serif`;
+            ctx.fillText(ent.text || '', 0, 0);
+            ctx.restore();
+            break;
+        }
+
+        case 'INSERT': {
+            const ix = tx(ent.insert[0]), iy = ty(ent.insert[1]);
+            ctx.save();
+            ctx.translate(ix, iy);
+            // 画一个小标记代表 INSERT 块
+            ctx.strokeStyle = isHovered ? '#ffee00' : '#aaaaaa';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-6, 0); ctx.lineTo(6, 0);
+            ctx.moveTo(0, -6); ctx.lineTo(0, 6);
+            ctx.stroke();
+            ctx.restore();
+            break;
+        }
+    }
+}
+
+// ── 鼠标交互 ──────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+    isDragging = true;
+    canvas.classList.add('grabbing');
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    panStartX = panX; panStartY = panY;
+});
+canvas.addEventListener('mouseup', () => { isDragging = false; canvas.classList.remove('grabbing'); });
+canvas.addEventListener('mouseleave', () => { isDragging = false; canvas.classList.remove('grabbing'); });
+
+canvas.addEventListener('mousemove', e => {
+    if (isDragging) {
+        panX = panStartX + (e.clientX - dragStartX);
+        panY = panStartY + (e.clientY - dragStartY);
+        render();
+        return;
+    }
+    // 悬停检测（只对文字做 tooltip）
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    // 转换为 DXF 坐标
+    const dx = (mx - panX) / zoom;
+    const dy = (panY - my) / zoom;
+    const hit = hitTest(dx, dy);
+    if (hit !== hoveredEntity) {
+        hoveredEntity = hit;
+        render();
+    }
+    showTooltip(hit, e.clientX, e.clientY);
+});
+
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+    panX = mx - (mx - panX) * factor;
+    panY = my - (my - panY) * factor;
+    zoom *= factor;
+    zoom = Math.max(0.005, Math.min(500, zoom));
+    document.getElementById('zoomSlider').value = Math.min(20, zoom);
+    document.getElementById('zoomLbl').textContent = zoom.toFixed(2) + 'x';
+    render();
+}, { passive: false });
+
+// 滑块缩放（以画布中心为锚点）
+document.getElementById('zoomSlider').addEventListener('input', e => {
+    const newZoom = parseFloat(e.target.value);
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    panX = cx - (cx - panX) * newZoom / zoom;
+    panY = cy - (cy - panY) * newZoom / zoom;
+    zoom = newZoom;
+    document.getElementById('zoomLbl').textContent = zoom.toFixed(2) + 'x';
+    render();
+});
+
+// ── Hit test ──────────────────────────────────────────────────
+function hitTest(dx, dy) {
+    const thresh = 6 / zoom;
+    for (let i = entities.length - 1; i >= 0; i--) {
+        const ent = entities[i];
+        if (!visibleLayers.has(ent.layer)) continue;
+        if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+            if (Math.abs(ent.insert[0]-dx) < thresh*4 && Math.abs(ent.insert[1]-dy) < thresh*4) return ent;
+        } else if (ent.type === 'LINE') {
+            if (distPtSeg(dx, dy, ent.start[0], ent.start[1], ent.end[0], ent.end[1]) < thresh) return ent;
+        } else if (ent.type === 'CIRCLE') {
+            if (Math.abs(Math.hypot(dx-ent.center[0], dy-ent.center[1]) - ent.radius) < thresh) return ent;
+        }
+    }
+    return null;
+}
+
+function distPtSeg(px, py, ax, ay, bx, by) {
+    const dx = bx-ax, dy = by-ay;
+    const t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy||1)));
+    return Math.hypot(px-ax-t*dx, py-ay-t*dy);
+}
+
+// ── Tooltip ──────────────────────────────────────────────────
+const tooltip = document.getElementById('tooltip');
+function showTooltip(ent, cx, cy) {
+    if (!ent) { tooltip.style.display = 'none'; return; }
+    let html = `<p><strong>类型:</strong> ${ent.type}</p>`;
+    html += `<p><strong>图层:</strong> ${ent.layer}</p>`;
+    html += `<p><strong>Handle:</strong> ${ent.handle}</p>`;
+    if (ent.text)   html += `<p><strong>文字:</strong> ${ent.text}</p>`;
+    if (ent.radius) html += `<p><strong>半径:</strong> ${ent.radius.toFixed(3)}</p>`;
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (cx + 14) + 'px';
+    tooltip.style.top  = (cy - 10) + 'px';
+}
+
+// ── Loading ───────────────────────────────────────────────────
+function showLoading(txt) {
+    document.getElementById('loadingTxt').textContent = txt || '处理中...';
+    document.getElementById('loadingOverlay').classList.add('show');
+}
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+// ── 启动 ──────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>

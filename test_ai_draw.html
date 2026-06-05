@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 画圆测试 - WebSocket</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 18px;
+            background: #667eea;
+            border-radius: 2px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #45a049;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 15px;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .log-container {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #d4d4d4;
+            margin-bottom: 4px;
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        .log-entry.sent {
+            color: #4ec9b0;
+        }
+        .log-entry.received {
+            color: #ce9178;
+        }
+        .log-entry.error {
+            color: #f48771;
+        }
+        .log-time {
+            color: #858585;
+            margin-right: 8px;
+        }
+        .result-info {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .result-info h4 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .result-info pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            overflow-x: auto;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .hidden {
+            display: none;
+        }
+        .engine-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .engine-badge.autocad {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        .engine-badge.ezdxf {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+        .shape-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            background: #f5f5f5;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            background: #e8e8e8;
+        }
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+        .shape-panel {
+            transition: all 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 AI 画圆测试工具</h1>
+            <p>WebSocket 实时绘图接口测试 | 支持 AutoCAD COM / ezdxf 双引擎</p>
+        </div>
+
+        <div class="content">
+            <!-- 连接设置 -->
+            <div class="section">
+                <div class="section-title">连接设置</div>
+                <div class="form-group">
+                    <label>WebSocket 地址</label>
+                    <input type="text" id="wsUrl" value="ws://103.39.221.54:10792/ws/render" placeholder="ws://localhost:8080/ws/render">
+                </div>
+                <div class="btn-group">
+                    <button class="btn-primary" onclick="connect()">🔗 连接</button>
+                    <button class="btn-secondary" onclick="disconnect()">❌ 断开</button>
+                </div>
+                <div id="connectionStatus" class="status info">未连接</div>
+            </div>
+
+            <!-- 引擎选择 -->
+            <div class="section">
+                <div class="section-title">绘图引擎</div>
+                <div class="form-group">
+                    <label>选择引擎（自动检测可用性）</label>
+                    <select id="engine">
+                        <option value="">🔄 自动选择（优先 AutoCAD COM）</option>
+                        <option value="autocad">🖥️ AutoCAD COM（Windows 需运行 AutoCAD）</option>
+                        <option value="ezdxf">📦 ezdxf（跨平台，无需 AutoCAD）</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 图形类型选择 -->
+            <div class="section">
+                <div class="section-title">选择图形类型</div>
+                <div class="shape-tabs">
+                    <button class="tab-btn active" onclick="switchShape('circle')" id="tab-circle">⭕ 圆</button>
+                    <button class="tab-btn" onclick="switchShape('rectangle')" id="tab-rectangle">▭ 长方形</button>
+                    <button class="tab-btn" onclick="switchShape('square')" id="tab-square">⬜ 正方形</button>
+                </div>
+            </div>
+
+            <!-- 圆参数 -->
+            <div class="section shape-panel" id="panel-circle">
+                <div class="section-title">圆的参数</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>圆心 X (cx)</label>
+                        <input type="number" id="cx" value="100" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>圆心 Y (cy)</label>
+                        <input type="number" id="cy" value="100" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>半径 (r)</label>
+                        <input type="number" id="r" value="50" step="1" min="0.1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 长方形参数 -->
+            <div class="section shape-panel hidden" id="panel-rectangle">
+                <div class="section-title">长方形参数</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>起点 X (x)</label>
+                        <input type="number" id="rectX" value="50" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>起点 Y (y)</label>
+                        <input type="number" id="rectY" value="50" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>宽度 (width)</label>
+                        <input type="number" id="rectW" value="150" step="1" min="0.1">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>高度 (height)</label>
+                        <input type="number" id="rectH" value="100" step="1" min="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>旋转角度 (°)</label>
+                        <input type="number" id="rectRotation" value="0" step="5">
+                    </div>
+                    <div class="form-group">
+                        <label>填充</label>
+                        <select id="rectFill">
+                            <option value="stroke">仅边框</option>
+                            <option value="fill">填充</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 正方形参数 -->
+            <div class="section shape-panel hidden" id="panel-square">
+                <div class="section-title">正方形参数</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>起点 X (x)</label>
+                        <input type="number" id="squareX" value="75" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>起点 Y (y)</label>
+                        <input type="number" id="squareY" value="75" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label>边长 (size)</label>
+                        <input type="number" id="squareSize" value="100" step="1" min="0.1">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>旋转角度 (°)</label>
+                        <input type="number" id="squareRotation" value="0" step="5">
+                    </div>
+                    <div class="form-group">
+                        <label>填充</label>
+                        <select id="squareFill">
+                            <option value="stroke">仅边框</option>
+                            <option value="fill">填充</option>
+                        </select>
+                    </div>
+                    <div class="form-group"></div>
+                </div>
+            </div>
+
+            <!-- 通用样式参数 -->
+            <div class="section">
+                <div class="section-title">样式与标注</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>边框颜色</label>
+                        <input type="text" id="color" value="#FF0000" placeholder="#FF0000">
+                    </div>
+                    <div class="form-group">
+                        <label>填充颜色</label>
+                        <input type="text" id="fillColor" value="#FF000033" placeholder="#FF000033">
+                    </div>
+                    <div class="form-group">
+                        <label>图层</label>
+                        <input type="text" id="layer" value="AI_SHAPES" placeholder="0">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>名称/标注</label>
+                        <input type="text" id="shapeName" value="" placeholder="输入图形名称">
+                    </div>
+                    <div class="form-group">
+                        <label>名称位置</label>
+                        <select id="namePosition">
+                            <option value="center">中心</option>
+                            <option value="top">顶部</option>
+                            <option value="bottom">底部</option>
+                            <option value="left">左侧</option>
+                            <option value="right">右侧</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>输出格式</label>
+                        <select id="outputFormat">
+                            <option value="dxf">DXF</option>
+                            <option value="dwg">DWG</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="section">
+                <div class="section-title">发送请求</div>
+                <div class="btn-group">
+                    <button class="btn-primary" onclick="sendDrawShape()">🎨 绘制图形</button>
+                    <button class="btn-secondary" onclick="sendMinimal()">⚡ 极简请求（只传 type）</button>
+                    <button class="btn-success" onclick="clearLog()">🗑️ 清空日志</button>
+                </div>
+            </div>
+
+            <!-- 图形预览 -->
+            <div class="section">
+                <div class="section-title">图形预览 <span style="font-weight:normal;color:#999">(Canvas 实时绘制)</span></div>
+                <canvas id="shapeCanvas" width="400" height="300" style="border: 2px solid #e0e0e0; border-radius: 8px; background: #fafafa; display: block; margin: 0 auto;"></canvas>
+                <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+                    <span id="previewInfo">圆心: (100, 100) | 半径: 50</span> | 
+                    颜色: <span id="previewColor" style="display: inline-block; width: 12px; height: 12px; background: #FF0000; border-radius: 2px; vertical-align: middle;"></span>
+                    <span id="previewName" style="margin-left: 10px; font-weight: 600; color: #333;"></span>
+                </div>
+            </div>
+
+            <!-- 日志 -->
+            <div class="section">
+                <div class="section-title">通信日志</div>
+                <div class="log-container" id="logContainer">
+                    <div class="log-entry">等待连接...</div>
+                </div>
+            </div>
+
+            <!-- 结果 -->
+            <div class="section hidden" id="resultSection">
+                <div class="section-title">绘制结果</div>
+                <div class="result-info">
+                    <h4>文件信息</h4>
+                    <div id="resultInfo"></div>
+                    <h4 style="margin-top: 15px;">响应详情</h4>
+                    <pre id="resultJson"></pre>
+                    <button class="btn-success" onclick="downloadFile()" style="margin-top: 15px;">
+                        ⬇️ 下载结果文件
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let lastResult = null;
+        let currentShape = 'circle'; // circle, rectangle, square
+
+        function getTime() {
+            return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        }
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="log-time">[${getTime()}]</span>${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateStatus(text, state) {
+            const status = document.getElementById('connectionStatus');
+            status.textContent = text;
+            status.className = `status ${state}`;
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('已经连接', 'error');
+                return;
+            }
+
+            const url = document.getElementById('wsUrl').value;
+            updateStatus('连接中...', 'connecting');
+            log(`正在连接: ${url}`, 'info');
+
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                updateStatus('已连接', 'connected');
+                log('✅ WebSocket 连接成功', 'received');
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    log(`⬅️ 收到: ${msg.type}`, 'received');
+                    handleMessage(msg);
+                } catch (e) {
+                    log(`⬅️ 收到原始数据: ${event.data.substring(0, 200)}...`, 'received');
+                }
+            };
+
+            ws.onerror = (error) => {
+                updateStatus('连接错误', 'error');
+                log('❌ WebSocket 错误', 'error');
+            };
+
+            ws.onclose = () => {
+                updateStatus('已断开', 'error');
+                log('🔌 WebSocket 已关闭', 'error');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleMessage(msg) {
+            if (msg.type === 'connected') {
+                log(`服务端就绪 (客户端ID: ${msg.client_id})`, 'info');
+            } else if (msg.type === 'started') {
+                log(`🚀 开始绘制: ${msg.filename} (引擎: ${msg.engine_requested || 'auto'})`, 'info');
+            } else if (msg.type === 'result') {
+                lastResult = msg;
+                const engineBadge = msg.engine_used === 'autocad' 
+                    ? '<span class="engine-badge autocad">AutoCAD COM</span>'
+                    : '<span class="engine-badge ezdxf">ezdxf</span>';
+                
+                document.getElementById('resultSection').classList.remove('hidden');
+                document.getElementById('resultInfo').innerHTML = `
+                    <p><strong>文件名:</strong> ${msg.filename}</p>
+                    <p><strong>引擎:</strong> ${engineBadge}</p>
+                    <p><strong>文件大小:</strong> ${msg.size_bytes} 字节</p>
+                    <p><strong>图形数:</strong> ${msg.shape_count} (成功: ${msg.success_count}, 失败: ${msg.error_count})</p>
+                `;
+                document.getElementById('resultJson').textContent = JSON.stringify(msg, null, 2);
+                log(`✅ 绘制完成! 引擎: ${msg.engine_used}, 文件: ${msg.filename}`, 'received');
+            } else if (msg.type === 'error') {
+                log(`❌ 错误: ${msg.code} - ${msg.msg}`, 'error');
+            } else if (msg.type === 'progress') {
+                log(`📊 进度: ${msg.pct}% - ${msg.msg}`, 'info');
+            }
+        }
+
+        // 切换图形类型
+        function switchShape(shape) {
+            currentShape = shape;
+            
+            // 更新标签样式
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-${shape}`).classList.add('active');
+            
+            // 显示对应面板
+            document.querySelectorAll('.shape-panel').forEach(panel => panel.classList.add('hidden'));
+            document.getElementById(`panel-${shape}`).classList.remove('hidden');
+            
+            // 更新预览
+            updatePreview();
+        }
+
+        // 获取画布中心点（用于居中显示图形）
+        function getCanvasCenter() {
+            const canvas = document.getElementById('shapeCanvas');
+            return { x: canvas.width / 2, y: canvas.height / 2 };
+        }
+
+        // 绘制网格背景
+        function drawGrid(ctx, canvas) {
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+            
+            // 绘制坐标轴
+            const center = getCanvasCenter();
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(center.x, 0);
+            ctx.lineTo(center.x, canvas.height);
+            ctx.moveTo(0, center.y);
+            ctx.lineTo(canvas.width, center.y);
+            ctx.stroke();
+        }
+
+        // 绘制名称标注
+        function drawName(ctx, name, position, x, y, width, height, color) {
+            if (!name) return;
+            
+            ctx.fillStyle = color;
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            let nx = x, ny = y;
+            switch (position) {
+                case 'top': ny = y - height/2 - 15; break;
+                case 'bottom': ny = y + height/2 + 15; break;
+                case 'left': nx = x - width/2 - 30; ctx.textAlign = 'right'; break;
+                case 'right': nx = x + width/2 + 30; ctx.textAlign = 'left'; break;
+                default: // center
+            }
+            
+            // 绘制文字背景
+            const metrics = ctx.measureText(name);
+            const padding = 4;
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(
+                nx - metrics.width/2 - padding, 
+                ny - 8 - padding, 
+                metrics.width + padding*2, 
+                16 + padding*2
+            );
+            
+            ctx.fillStyle = color;
+            ctx.fillText(name, nx, ny);
+        }
+
+        // 绘制圆
+        function drawCircleOnCanvas(cx, cy, r, color, fillColor, name, namePos) {
+            const canvas = document.getElementById('shapeCanvas');
+            const ctx = canvas.getContext('2d');
+            const center = getCanvasCenter();
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid(ctx, canvas);
+            
+            // 计算缩放
+            const padding = 50;
+            const maxRadius = Math.min(canvas.width, canvas.height) / 2 - padding;
+            const scale = r > maxRadius ? maxRadius / r : 1;
+            
+            // 填充
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, r * scale, 0, 2 * Math.PI);
+            if (fillColor) {
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+            }
+            
+            // 边框
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, r * scale, 0, 2 * Math.PI);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // 圆心
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = '#333';
+            ctx.fill();
+            
+            // 名称
+            drawName(ctx, name, namePos, center.x, center.y, r*scale*2, r*scale*2, color);
+            
+            // 信息
+            document.getElementById('previewInfo').textContent = `圆心: (${cx}, ${cy}) | 半径: ${r}`;
+            document.getElementById('previewColor').style.background = color;
+            document.getElementById('previewName').textContent = name || '';
+        }
+
+        // 绘制长方形
+        function drawRectangleOnCanvas(x, y, w, h, rotation, color, fillColor, name, namePos) {
+            const canvas = document.getElementById('shapeCanvas');
+            const ctx = canvas.getContext('2d');
+            const center = getCanvasCenter();
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid(ctx, canvas);
+            
+            // 计算缩放
+            const padding = 50;
+            const maxSize = Math.min(canvas.width, canvas.height) - padding * 2;
+            const maxDim = Math.max(w, h);
+            const scale = maxDim > maxSize ? maxSize / maxDim : 1;
+            
+            const sw = w * scale;
+            const sh = h * scale;
+            
+            ctx.save();
+            ctx.translate(center.x, center.y);
+            ctx.rotate(rotation * Math.PI / 180);
+            
+            // 填充
+            if (fillColor) {
+                ctx.fillStyle = fillColor;
+                ctx.fillRect(-sw/2, -sh/2, sw, sh);
+            }
+            
+            // 边框
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-sw/2, -sh/2, sw, sh);
+            
+            // 中心点
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, 2 * Math.PI);
+            ctx.fillStyle = '#333';
+            ctx.fill();
+            
+            ctx.restore();
+            
+            // 名称（在旋转后的坐标系外绘制）
+            drawName(ctx, name, namePos, center.x, center.y, sw, sh, color);
+            
+            document.getElementById('previewInfo').textContent = 
+                `起点: (${x}, ${y}) | 宽: ${w} | 高: ${h}${rotation ? ' | 旋转: ' + rotation + '°' : ''}`;
+            document.getElementById('previewColor').style.background = color;
+            document.getElementById('previewName').textContent = name || '';
+        }
+
+        // 绘制正方形
+        function drawSquareOnCanvas(x, y, size, rotation, color, fillColor, name, namePos) {
+            drawRectangleOnCanvas(x, y, size, size, rotation, color, fillColor, name, namePos);
+            document.getElementById('previewInfo').textContent = 
+                `起点: (${x}, ${y}) | 边长: ${size}${rotation ? ' | 旋转: ' + rotation + '°' : ''}`;
+        }
+
+        // 统一更新预览
+        function updatePreview() {
+            const color = document.getElementById('color').value || '#FF0000';
+            const fillColor = document.getElementById('fillColor').value || null;
+            const name = document.getElementById('shapeName').value;
+            const namePos = document.getElementById('namePosition').value;
+            
+            if (currentShape === 'circle') {
+                const cx = parseFloat(document.getElementById('cx').value) || 100;
+                const cy = parseFloat(document.getElementById('cy').value) || 100;
+                const r = parseFloat(document.getElementById('r').value) || 50;
+                drawCircleOnCanvas(cx, cy, r, color, fillColor, name, namePos);
+            } else if (currentShape === 'rectangle') {
+                const x = parseFloat(document.getElementById('rectX').value) || 50;
+                const y = parseFloat(document.getElementById('rectY').value) || 50;
+                const w = parseFloat(document.getElementById('rectW').value) || 150;
+                const h = parseFloat(document.getElementById('rectH').value) || 100;
+                const rot = parseFloat(document.getElementById('rectRotation').value) || 0;
+                drawRectangleOnCanvas(x, y, w, h, rot, color, fillColor, name, namePos);
+            } else if (currentShape === 'square') {
+                const x = parseFloat(document.getElementById('squareX').value) || 75;
+                const y = parseFloat(document.getElementById('squareY').value) || 75;
+                const size = parseFloat(document.getElementById('squareSize').value) || 100;
+                const rot = parseFloat(document.getElementById('squareRotation').value) || 0;
+                drawSquareOnCanvas(x, y, size, rot, color, fillColor, name, namePos);
+            }
+        }
+
+        // 发送绘制请求（支持所有图形类型）
+        function sendDrawShape() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('请先连接 WebSocket');
+                return;
+            }
+
+            const color = document.getElementById('color').value || '#FF0000';
+            const fillColor = document.getElementById('fillColor').value || null;
+            const layer = document.getElementById('layer').value || 'AI_SHAPES';
+            const name = document.getElementById('shapeName').value;
+            const outputFormat = document.getElementById('outputFormat').value;
+            const engine = document.getElementById('engine').value;
+
+            // 先在 Canvas 上预览
+            updatePreview();
+
+            let shape = null;
+            let logMsg = '';
+
+            if (currentShape === 'circle') {
+                const cx = parseFloat(document.getElementById('cx').value) || 100;
+                const cy = parseFloat(document.getElementById('cy').value) || 100;
+                const r = parseFloat(document.getElementById('r').value) || 50;
+                shape = {
+                    id: 'circle_' + Date.now(),
+                    type: 'circle',
+                    layer: layer,
+                    geometry: { cx, cy, r },
+                    style: {
+                        stroke_color: color,
+                        stroke_width: 0.25,
+                        fill_color: fillColor
+                    }
+                };
+                logMsg = `画圆 (${cx}, ${cy}, r=${r})`;
+                if (name) logMsg += ` [${name}]`;
+            } else if (currentShape === 'rectangle') {
+                const x = parseFloat(document.getElementById('rectX').value) || 50;
+                const y = parseFloat(document.getElementById('rectY').value) || 50;
+                const w = parseFloat(document.getElementById('rectW').value) || 150;
+                const h = parseFloat(document.getElementById('rectH').value) || 100;
+                const rot = parseFloat(document.getElementById('rectRotation').value) || 0;
+                shape = {
+                    id: 'rect_' + Date.now(),
+                    type: 'rectangle',
+                    layer: layer,
+                    geometry: { x, y, width: w, height: h, rotation: rot },
+                    style: {
+                        stroke_color: color,
+                        stroke_width: 0.25,
+                        fill_color: fillColor
+                    }
+                };
+                logMsg = `画长方形 (${x}, ${y}, w=${w}, h=${h})`;
+                if (rot) logMsg += ` 旋转${rot}°`;
+                if (name) logMsg += ` [${name}]`;
+            } else if (currentShape === 'square') {
+                const x = parseFloat(document.getElementById('squareX').value) || 75;
+                const y = parseFloat(document.getElementById('squareY').value) || 75;
+                const size = parseFloat(document.getElementById('squareSize').value) || 100;
+                const rot = parseFloat(document.getElementById('squareRotation').value) || 0;
+                shape = {
+                    id: 'square_' + Date.now(),
+                    type: 'rectangle', // 正方形也是 rectangle 类型
+                    layer: layer,
+                    geometry: { x, y, width: size, height: size, rotation: rot },
+                    style: {
+                        stroke_color: color,
+                        stroke_width: 0.25,
+                        fill_color: fillColor
+                    }
+                };
+                logMsg = `画正方形 (${x}, ${y}, size=${size})`;
+                if (rot) logMsg += ` 旋转${rot}°`;
+                if (name) logMsg += ` [${name}]`;
+            }
+
+            const request = {
+                type: 'ai_edit',
+                output_format: outputFormat,
+                shapes: [shape]
+            };
+
+            if (engine) {
+                request.engine = engine;
+            }
+
+            ws.send(JSON.stringify(request));
+            log(`➡️ 发送: ${logMsg}`, 'sent');
+        }
+
+        function sendMinimal() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('请先连接 WebSocket');
+                return;
+            }
+
+            // 切换到圆并绘制默认圆
+            switchShape('circle');
+            document.getElementById('cx').value = 100;
+            document.getElementById('cy').value = 100;
+            document.getElementById('r').value = 50;
+            document.getElementById('color').value = '#FF0000';
+            updatePreview();
+
+            const request = {
+                type: 'ai_edit'
+            };
+
+            const engine = document.getElementById('engine').value;
+            if (engine) {
+                request.engine = engine;
+            }
+
+            ws.send(JSON.stringify(request));
+            log('➡️ 发送: 极简请求（只传 type，使用默认圆）', 'sent');
+        }
+
+        function clearLog() {
+            document.getElementById('logContainer').innerHTML = '';
+            log('日志已清空', 'info');
+        }
+
+        function downloadFile() {
+            if (!lastResult || !lastResult.data) {
+                alert('没有可下载的文件');
+                return;
+            }
+
+            const byteCharacters = atob(lastResult.data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+
+            const format = lastResult.format === 'dwg_base64' ? 'application/octet-stream' : 'application/dxf';
+            const blob = new Blob([byteArray], { type: format });
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = lastResult.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            log(`⬇️ 已下载: ${lastResult.filename}`, 'info');
+        }
+
+        // 实时更新预览
+        function setupLivePreview() {
+            // 圆的参数监听
+            ['cx', 'cy', 'r'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    if (currentShape === 'circle') updatePreview();
+                });
+            });
+            
+            // 长方形参数监听
+            ['rectX', 'rectY', 'rectW', 'rectH', 'rectRotation'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    if (currentShape === 'rectangle') updatePreview();
+                });
+            });
+            
+            // 正方形参数监听
+            ['squareX', 'squareY', 'squareSize', 'squareRotation'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    if (currentShape === 'square') updatePreview();
+                });
+            });
+            
+            // 通用样式监听
+            ['color', 'fillColor', 'shapeName'].forEach(id => {
+                document.getElementById(id).addEventListener('input', updatePreview);
+            });
+            document.getElementById('namePosition').addEventListener('change', updatePreview);
+        }
+
+        // 页面加载时初始化
+        window.onload = () => {
+            log('页面加载完成，点击"连接"按钮开始测试', 'info');
+            // 初始化 Canvas 显示默认圆
+            updatePreview();
+            // 设置实时预览
+            setupLivePreview();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<!--
+==============================================
+  CadLike 主控端 (Master Controller)
+==============================================
+  职责：发送请求到服务器
+  ├── 文件上传与预览请求
+  ├── DXF 修改操作请求 (export)
+  └── 绘图指令请求 (ai_edit)
+
+  WebSocket 消息格式：
+  ┌─────────────────────────────────────────
+  │ 预览请求:
+  │   { type:"preview", file_data:"base64...",
+  │     width:800, height:600 }
+  │
+  │ 修改请求:
+  │   { type:"export", filename:"x.dxf",
+  │     file_data:"base64...",
+  │     edits:[{type:"move",target:"*",x:10,y:0}] }
+  │
+  │ 绘图请求:
+  │   { type:"ai_edit", filename:"x.dxf",
+  │     file_data:null,
+  │     shapes:[{id,type,center,...}] }
+  └─────────────────────────────────────────
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎮 CadLike 主控端</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px 30px;
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section h3 {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #667eea;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #555;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group textarea {
+            min-height: 180px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .presets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .preset-btn {
+            padding: 10px;
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Monaco', monospace;
+            font-size: 12px;
+            height: 250px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+        .log-entry {
+            margin-bottom: 6px;
+        }
+        .log-time { color: #858585; margin-right: 8px; }
+        .log-send { color: #4fc1ff; }
+        .log-recv { color: #7ee787; }
+        .log-error { color: #f48771; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 CadLike 主控端 (Master Controller)</h1>
+            <p>发送绘图指令到被控端服务器</p>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <h3>🔌 连接设置</h3>
+                <div class="form-group">
+                    <label>服务器地址</label>
+                    <input type="text" id="wsUrl" value="ws://localhost:8080/ws/render" placeholder="ws://localhost:8080/ws/render">
+                </div>
+                <div id="connectionStatus" class="status disconnected">
+                    <span class="status-dot"></span>
+                    <span id="statusText">未连接</span>
+                </div>
+                <div class="btn-group" style="margin-top: 15px;">
+                    <button class="btn" id="connectBtn" onclick="connect()">连接服务器</button>
+                    <button class="btn btn-secondary" id="disconnectBtn" onclick="disconnect()" disabled>断开</button>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>📁 文件上传与编辑</h3>
+                <div class="form-group">
+                    <label>上传 DXF/DWG 文件</label>
+                    <input type="file" id="fileInput" accept=".dxf,.dwg" onchange="handleFileUpload(event)" style="padding: 8px;">
+                </div>
+                <div id="fileInfo" style="display: none; padding: 10px; background: #f0f0f0; border-radius: 6px; margin-bottom: 15px; font-size: 13px;">
+                    <strong>📄 已加载:</strong> <span id="fileName"></span> (<span id="fileSize"></span>)
+                </div>
+                <div class="btn-group" style="margin-bottom: 15px;">
+                    <button class="btn" onclick="previewFile()" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);">🖼️ 预览渲染</button>
+                    <button class="btn btn-secondary" onclick="clearFile()">🗑️ 清除文件</button>
+                </div>
+                
+                <div id="previewArea" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px;">🖼️ DXF 预览</h4>
+                    <div id="previewImage" style="text-align: center;">
+                        <p style="color: #999;">点击"预览渲染"查看图形...</p>
+                    </div>
+                </div>
+                
+                <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px;">✏️ 编辑操作</h4>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>操作类型</label>
+                        <select id="editType">
+                            <option value="move">📍 移动图形</option>
+                            <option value="delete">🗑️ 删除图形</option>
+                            <option value="set_color">🎨 修改颜色</option>
+                            <option value="set_layer">📂 修改图层</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>目标 (Handle ID)</label>
+                        <input type="text" id="editTarget" placeholder="例如: 1F 或 *">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>X 偏移</label>
+                        <input type="number" id="editX" value="0" placeholder="0">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Y 偏移</label>
+                        <input type="number" id="editY" value="0" placeholder="0">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>新颜色/图层</label>
+                        <input type="text" id="editValue" placeholder="#FF0000 或 Layer1">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="applyEdit()" style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">✏️ 应用编辑</button>
+                    <button class="btn btn-secondary" onclick="exportFile('dxf')">💾 导出 DXF</button>
+                    <button class="btn btn-secondary" onclick="exportFile('dwg')">💾 导出 DWG</button>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>🎨 绘图指令 (CadLike 格式)</h3>
+                <div class="presets">
+                    <button class="preset-btn" onclick="setPreset('circle')">🔴 圆形</button>
+                    <button class="preset-btn" onclick="setPreset('line')">📏 直线</button>
+                    <button class="preset-btn" onclick="setPreset('rect')">⬜ 矩形</button>
+                    <button class="preset-btn" onclick="setPreset('text')">📝 文字</button>
+                    <button class="preset-btn" onclick="setPreset('ellipse')">⭕ 椭圆</button>
+                    <button class="preset-btn" onclick="setPreset('multi')">🔷 组合</button>
+                </div>
+                
+                <h3 style="margin-top: 20px; border-bottom-color: #28a745;">📍 坐标快速绘图</h3>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>X 坐标</label>
+                        <input type="number" id="coordX" value="100" placeholder="100">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>Y 坐标</label>
+                        <input type="number" id="coordY" value="100" placeholder="100">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>图形类型</label>
+                        <select id="coordType" onchange="updateCoordParams()">
+                            <option value="circle">🔴 圆形</option>
+                            <option value="square">⬜ 正方形</option>
+                            <option value="rectangle">▭ 长方形</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label id="param1Label">半径 / 边长</label>
+                        <input type="number" id="coordParam1" value="50" placeholder="50">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;" id="param2Group" style="display: none;">
+                        <label id="param2Label">高度 / 宽度</label>
+                        <input type="number" id="coordParam2" value="80" placeholder="80">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>颜色</label>
+                        <input type="color" id="coordColor" value="#ff0000" style="height: 38px; padding: 2px;">
+                    </div>
+                </div>
+                <div class="btn-group" style="margin-bottom: 20px;">
+                    <button class="btn" onclick="drawByCoords()" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">📍 在坐标处绘制</button>
+                    <button class="btn btn-secondary" onclick="addToBatch()">➕ 添加到批量</button>
+                </div>
+                
+                <div class="form-group">
+                    <textarea id="commandJson" placeholder='{
+  "type": "ai_edit",
+  "filename": "drawing.dxf",
+  "file_data": null,
+  "shapes": [
+    {
+      "id": "c1",
+      "type": "AddCircle",
+      "center": [100, 100, 0],
+      "radius": 50,
+      "color": "#FF0000"
+    }
+  ]
+}'></textarea>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" id="sendBtn" onclick="sendCommand()" disabled>📤 发送指令</button>
+                    <button class="btn btn-secondary" onclick="clearLog()">🗑️ 清空日志</button>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>📨 通信日志</h3>
+                <div id="log" class="log">等待连接...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let requestStartTime = null;
+        
+        const presets = {
+            circle: {
+                type: "ai_edit",
+                filename: "circle.dxf",
+                file_data: null,
+                shapes: [{ id: "c1", type: "AddCircle", center: [100, 100, 0], radius: 50, color: "#FF0000", layer: "0" }]
+            },
+            line: {
+                type: "ai_edit",
+                filename: "line.dxf",
+                file_data: null,
+                shapes: [{ id: "l1", type: "AddLine", start_point: [0, 0, 0], end_point: [200, 200, 0], color: "#00FF00", layer: "0" }]
+            },
+            rect: {
+                type: "ai_edit",
+                filename: "rectangle.dxf",
+                file_data: null,
+                shapes: [{ id: "r1", type: "AddRectangle", x: 50, y: 50, width: 100, height: 80, color: "#0000FF", layer: "0" }]
+            },
+            text: {
+                type: "ai_edit",
+                filename: "text.dxf",
+                file_data: null,
+                shapes: [{ id: "t1", type: "AddText", text: "Hello CAD", insert_point: [50, 150, 0], height: 12, color: "#000000", layer: "0" }]
+            },
+            ellipse: {
+                type: "ai_edit",
+                filename: "ellipse.dxf",
+                file_data: null,
+                shapes: [{ id: "e1", type: "AddEllipse", center: [100, 100, 0], major_axis: [150, 100, 0], radius_ratio: 0.6, color: "#FF00FF", layer: "0" }]
+            },
+            multi: {
+                type: "ai_edit",
+                filename: "multi.dxf",
+                file_data: null,
+                shapes: [
+                    { id: "c1", type: "AddCircle", center: [100, 100, 0], radius: 50, color: "#FF0000" },
+                    { id: "l1", type: "AddLine", start_point: [0, 0, 0], end_point: [200, 200, 0], color: "#00FF00" },
+                    { id: "t1", type: "AddText", text: "Multi Shape", insert_point: [50, 150, 0], height: 12, color: "#000000" }
+                ]
+            }
+        };
+        
+        // 批量绘图队列
+        let batchShapes = [];
+        let uploadedFileData = null;
+        let uploadedFileName = null;
+        
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // readAsDataURL 返回 data:application/octet-stream;base64,xxxxx
+                const dataUrl = e.target.result;
+                // 提取 base64 部分（去掉 data:xxx;base64, 前缀）
+                uploadedFileData = dataUrl.split(',')[1];
+                uploadedFileName = file.name;
+                
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+                document.getElementById('fileInfo').style.display = 'block';
+                
+                log('info', `📁 已加载文件: ${file.name} (${file.size} bytes)`);
+                
+                // 自动预览
+                setTimeout(() => previewFile(), 500);
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function previewFile() {
+            if (!uploadedFileData) {
+                log('error', '❌ 请先上传文件');
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '❌ 未连接服务器');
+                return;
+            }
+            
+            const cmd = {
+                type: 'preview',
+                file_data: uploadedFileData,
+                width: 800,
+                height: 600
+            };
+            
+            ws.send(JSON.stringify(cmd));
+            log('send', '🖼️ 请求渲染预览...');
+        }
+        
+        function clearFile() {
+            uploadedFileData = null;
+            uploadedFileName = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileInfo').style.display = 'none';
+            document.getElementById('previewArea').style.display = 'none';
+            log('info', '🗑️ 已清除文件');
+        }
+        
+        function updateCoordParams() {
+            const type = document.getElementById('coordType').value;
+            const param2Group = document.getElementById('param2Group');
+            const param1Label = document.getElementById('param1Label');
+            const param2Label = document.getElementById('param2Label');
+            
+            if (type === 'circle') {
+                param1Label.textContent = '半径';
+                param2Group.style.display = 'none';
+            } else if (type === 'square') {
+                param1Label.textContent = '边长';
+                param2Group.style.display = 'none';
+            } else if (type === 'rectangle') {
+                param1Label.textContent = '宽度';
+                param2Label.textContent = '高度';
+                param2Group.style.display = 'block';
+            }
+        }
+        
+        function drawByCoords() {
+            const x = parseFloat(document.getElementById('coordX').value) || 0;
+            const y = parseFloat(document.getElementById('coordY').value) || 0;
+            const type = document.getElementById('coordType').value;
+            const param1 = parseFloat(document.getElementById('coordParam1').value) || 50;
+            const param2 = parseFloat(document.getElementById('coordParam2').value) || 80;
+            const color = document.getElementById('coordColor').value;
+            
+            let shape = null;
+            const id = type + Date.now();
+            
+            if (type === 'circle') {
+                shape = {
+                    id: id,
+                    type: 'AddCircle',
+                    center: [x, y, 0],
+                    radius: param1,
+                    color: color,
+                    layer: '0'
+                };
+            } else if (type === 'square') {
+                shape = {
+                    id: id,
+                    type: 'AddRectangle',
+                    x: x - param1/2,
+                    y: y - param1/2,
+                    width: param1,
+                    height: param1,
+                    color: color,
+                    layer: '0'
+                };
+            } else if (type === 'rectangle') {
+                shape = {
+                    id: id,
+                    type: 'AddRectangle',
+                    x: x - param1/2,
+                    y: y - param2/2,
+                    width: param1,
+                    height: param2,
+                    color: color,
+                    layer: '0'
+                };
+            }
+            
+            if (shape) {
+                const cmd = {
+                    type: 'ai_edit',
+                    filename: `${type}_at_${x}_${y}.dxf`,
+                    file_data: null,
+                    shapes: [shape]
+                };
+                document.getElementById('commandJson').value = JSON.stringify(cmd, null, 2);
+                sendCommand();
+            }
+        }
+        
+        function addToBatch() {
+            const x = parseFloat(document.getElementById('coordX').value) || 0;
+            const y = parseFloat(document.getElementById('coordY').value) || 0;
+            const type = document.getElementById('coordType').value;
+            const param1 = parseFloat(document.getElementById('coordParam1').value) || 50;
+            const param2 = parseFloat(document.getElementById('coordParam2').value) || 80;
+            const color = document.getElementById('coordColor').value;
+            
+            let shape = null;
+            const id = type + Date.now();
+            
+            if (type === 'circle') {
+                shape = {
+                    id: id,
+                    type: 'AddCircle',
+                    center: [x, y, 0],
+                    radius: param1,
+                    color: color,
+                    layer: '0'
+                };
+            } else if (type === 'square') {
+                shape = {
+                    id: id,
+                    type: 'AddRectangle',
+                    x: x - param1/2,
+                    y: y - param1/2,
+                    width: param1,
+                    height: param1,
+                    color: color,
+                    layer: '0'
+                };
+            } else if (type === 'rectangle') {
+                shape = {
+                    id: id,
+                    type: 'AddRectangle',
+                    x: x - param1/2,
+                    y: y - param2/2,
+                    width: param1,
+                    height: param2,
+                    color: color,
+                    layer: '0'
+                };
+            }
+            
+            if (shape) {
+                batchShapes.push(shape);
+                log('info', `➕ 已添加到批量队列 (${batchShapes.length} 个图形)`);
+                
+                // 更新JSON显示
+                const cmd = {
+                    type: 'ai_edit',
+                    filename: `batch_${batchShapes.length}_shapes.dxf`,
+                    file_data: null,
+                    shapes: batchShapes
+                };
+                document.getElementById('commandJson').value = JSON.stringify(cmd, null, 2);
+            }
+        }
+        
+        function setPreset(name) {
+            document.getElementById('commandJson').value = JSON.stringify(presets[name], null, 2);
+        }
+        
+        function showDownloadLink(base64Data, filename) {
+            const blob = b64toBlob(base64Data, 'application/octet-stream');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.textContent = `下载 ${filename}`;
+            a.className = 'btn';
+            a.style = 'margin-top: 10px; display: inline-block; background: #28a745;';
+            
+            // 添加到预览区域或显示区域
+            const preview = document.getElementById('previewImage');
+            const linkDiv = document.createElement('div');
+            linkDiv.appendChild(a);
+            preview.appendChild(linkDiv);
+        }
+        
+        function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
+            const byteCharacters = atob(b64Data);
+            const byteArrays = [];
+            
+            for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                const slice = byteCharacters.slice(offset, offset + sliceSize);
+                const byteNumbers = new Array(slice.length);
+                for (let i = 0; i < slice.length; i++) {
+                    byteNumbers[i] = slice.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                byteArrays.push(byteArray);
+            }
+            
+            return new Blob(byteArrays, { type: contentType });
+        }
+        
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            log('info', `正在连接: ${url}`);
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = () => {
+                log('info', 'WebSocket 连接成功');
+                log('info', '✅ WebSocket 连接成功');
+                updateStatus(true);
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+            
+            ws.onerror = (error) => {
+                log('error', '❌ WebSocket 错误');
+            };
+            
+            ws.onclose = () => {
+                log('info', '🔌 连接已关闭');
+                updateStatus(false);
+            };
+        }
+        
+        function handleMessage(msg) {
+            const type = msg.type;
+            
+            switch(type) {
+                case 'connected':
+                    log('recv', `🤝 服务器就绪: ${msg.msg}`);
+                    break;
+                case 'started':
+                    log('recv', `🚀 开始绘制: ${msg.filename} (${msg.shape_count} 个图形)`);
+                    break;
+                case 'progress':
+                    log('recv', `⏳ 进度: ${msg.pct}% - ${msg.msg}`);
+                    break;
+                case 'preview':
+                    log('recv', `🖼️ 收到预览图片 (${msg.width}x${msg.height})`);
+                    // 显示预览图片
+                    document.getElementById('previewArea').style.display = 'block';
+                    document.getElementById('previewImage').innerHTML = 
+                        `<img src="data:image/png;base64,${msg.data}" style="max-width:100%; max-height:500px; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">`;
+                    break;
+                    
+                case 'result':
+                    const duration = requestStartTime ? Date.now() - requestStartTime : 0;
+                    log('recv', `✅ 完成! status=${msg.status}, 耗时 ${duration}ms`);
+                    log('recv', `   📁 文件: ${msg.filename} (${msg.size_bytes} bytes)`);
+                    log('recv', `   🔧 引擎: ${msg.engine_used}`);
+                    log('recv', `   📊 结果: ${msg.success_count}/${msg.shape_count} 成功`);
+                    // 如果有数据，显示下载链接
+                    if (msg.data) {
+                        showDownloadLink(msg.data, msg.filename);
+                    }
+                    break;
+                case 'error':
+                    log('error', `❌ 错误 ${msg.code}: ${msg.msg}`);
+                    break;
+                default:
+                    log('recv', `${type}: ${JSON.stringify(msg).substring(0, 100)}`);
+            }
+        }
+        
+        function sendCommand() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '❌ 未连接服务器');
+                return;
+            }
+            
+            const jsonText = document.getElementById('commandJson').value;
+            if (!jsonText.trim()) {
+                log('error', '❌ 请输入 JSON 指令');
+                return;
+            }
+            
+            try {
+                const cmd = JSON.parse(jsonText);
+                requestStartTime = Date.now();
+                ws.send(JSON.stringify(cmd));
+                log('send', `📤 发送: ${cmd.type} (${cmd.shapes?.length || 0} 个图形)`);
+            } catch (e) {
+                log('error', `❌ JSON 错误: ${e.message}`);
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+        
+        function updateStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            document.getElementById('connectBtn').disabled = connected;
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('sendBtn').disabled = !connected;
+            
+            if (connected) {
+                statusEl.className = 'status connected';
+                statusText.textContent = '已连接';
+            } else {
+                statusEl.className = 'status disconnected';
+                statusText.textContent = '未连接';
+            }
+        }
+        
+        function log(type, message) {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const colors = { send: 'log-send', recv: 'log-recv', error: 'log-error', info: 'log-info' };
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">${time}</span><span class="${colors[type] || 'log-info'}">${message}</span>`;
+            
+            if (logEl.innerHTML === '等待连接...') logEl.innerHTML = '';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '日志已清空...';
+        }
+        
+        // 文件上传相关函数（使用上面已定义的 uploadedFileData 变量）
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                const bytes = new Uint8Array(arrayBuffer);
+                uploadedFileData = btoa(String.fromCharCode.apply(null, bytes));
+                uploadedFileName = file.name;
+                
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+                document.getElementById('fileInfo').style.display = 'block';
+                
+                log('info', `📁 已加载文件: ${file.name} (${file.size} bytes)`);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        
+        function applyEdit() {
+            if (!uploadedFileData) {
+                log('error', '❌ 请先上传文件');
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '❌ 未连接服务器');
+                return;
+            }
+            
+            const editType = document.getElementById('editType').value;
+            const target = document.getElementById('editTarget').value || '*';
+            const x = parseFloat(document.getElementById('editX').value) || 0;
+            const y = parseFloat(document.getElementById('editY').value) || 0;
+            const value = document.getElementById('editValue').value;
+            
+            let edits = [];
+            
+            if (editType === 'move') {
+                edits.push({ type: 'move', target: target, x: x, y: y });
+            } else if (editType === 'delete') {
+                edits.push({ type: 'delete', target: target });
+            } else if (editType === 'set_color') {
+                edits.push({ type: 'set_color', target: target, color: value || '#FF0000' });
+            } else if (editType === 'set_layer') {
+                edits.push({ type: 'set_layer', target: target, layer: value || '0' });
+            }
+            
+            const cmd = {
+                type: 'export',
+                filename: uploadedFileName,
+                file_data: uploadedFileData,
+                output_format: uploadedFileName.endsWith('.dwg') ? 'dwg' : 'dxf',
+                edits: edits
+            };
+            
+            requestStartTime = Date.now();
+            ws.send(JSON.stringify(cmd));
+            log('send', `✏️ 应用编辑: ${editType} (${edits.length} 个操作)`);
+        }
+        
+        function exportFile(format) {
+            if (!uploadedFileData) {
+                log('error', '❌ 请先上传文件');
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '❌ 未连接服务器');
+                return;
+            }
+            
+            const cmd = {
+                type: 'export',
+                filename: uploadedFileName,
+                file_data: uploadedFileData,
+                output_format: format,
+                edits: []
+            };
+            
+            requestStartTime = Date.now();
+            ws.send(JSON.stringify(cmd));
+            log('send', `💾 导出为 ${format.toUpperCase()}`);
+        }
+        
+        setPreset('circle');
+        updateCoordParams();
+    </script>
+</body>
+</html>

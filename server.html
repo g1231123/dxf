@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<!--
+==============================================
+  CadLike 被控端 (Rendering Server Display)
+==============================================
+  职责：只展示服务器响应数据
+  ├── preview  → 显示 DXF 预览图
+  ├── result   → 显示绘图结果 + 下载链接
+  ├── progress → 显示进度
+  └── error    → 显示错误信息
+
+  响应消息格式：
+  ┌─────────────────────────────────────────
+  │ connected: { type:"connected", msg, total_clients }
+  │ preview:   { type:"preview", data:"base64png", width, height }
+  │ result:    { type:"result", status, filename, data:"base64",
+  │              engine_used, success_count, shape_count, size_bytes }
+  │ progress:  { type:"progress", pct, msg }
+  │ error:     { type:"error", code, msg }
+  └─────────────────────────────────────────
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🖥️ CadLike 被控端</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 { font-size: 22px; }
+        .header p { opacity: 0.85; font-size: 13px; margin-top: 4px; }
+        .content { padding: 24px 30px; }
+        .section { margin-bottom: 24px; }
+        .section h3 {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #9c27b0;
+        }
+        /* 连接栏 */
+        .connect-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .connect-bar input {
+            flex: 1;
+            padding: 9px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .connect-bar input:focus { outline: none; border-color: #9c27b0; }
+        .btn {
+            background: linear-gradient(135deg, #7b1fa2 0%, #9c27b0 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-gray { background: #e0e0e0; color: #555; }
+        /* 状态指示 */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-pill.on  { background: #f3e5f5; color: #7b1fa2; }
+        .status-pill.off { background: #fce4e4; color: #c62828; }
+        .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: blink 2s infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+        /* 统计卡片 */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+        .stat-card {
+            background: #f8f4ff;
+            padding: 14px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e8d5ff;
+        }
+        .stat-value { font-size: 26px; font-weight: bold; color: #7b1fa2; }
+        .stat-label { font-size: 11px; color: #888; margin-top: 3px; }
+        /* 日志 */
+        .log {
+            background: #1a1a2e;
+            color: #cdd6f4;
+            padding: 14px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            height: 220px;
+            overflow-y: auto;
+            line-height: 1.7;
+        }
+        .log-entry { margin-bottom: 3px; }
+        .t { color: #6272a4; margin-right: 8px; }
+        .c-ok  { color: #a6e3a1; }
+        .c-err { color: #f38ba8; }
+        .c-inf { color: #89dceb; }
+        .c-prg { color: #fab387; }
+        /* 结果展示区 */
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .result-card {
+            border: 2px solid #e8d5ff;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .result-card-header {
+            background: #f3e5f5;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #7b1fa2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .result-card-body {
+            padding: 14px;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            background: #fafafa;
+            color: #aaa;
+            font-size: 13px;
+        }
+        .result-card-body img {
+            max-width: 100%;
+            max-height: 320px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.12);
+        }
+        .meta-table { width: 100%; font-size: 12px; }
+        .meta-table tr td:first-child { color: #888; padding-right: 8px; width: 80px; }
+        .meta-table tr td:last-child  { color: #333; font-weight: 500; }
+        .meta-table tr { padding: 3px 0; display: block; }
+        .dl-btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-ok  { background: #d4edda; color: #155724; }
+        .badge-err { background: #f8d7da; color: #721c24; }
+        .badge-prg { background: #fff3cd; color: #856404; }
+        /* 进度条 */
+        .progress-wrap {
+            background: #eee;
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg,#7b1fa2,#9c27b0);
+            transition: width .3s;
+        }
+        @media (max-width: 600px) {
+            .result-grid { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: repeat(2,1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <h1>🖥️ CadLike 被控端</h1>
+            <p>只读模式 — 展示服务器响应数据</p>
+        </div>
+        <div id="pill" class="status-pill off">
+            <span class="dot"></span>
+            <span id="pillText">未连接</span>
+        </div>
+    </div>
+
+    <div class="content">
+
+        <!-- 连接设置 -->
+        <div class="section">
+            <h3>🔌 连接设置</h3>
+            <div class="connect-bar">
+                <input type="text" id="wsUrl" value="ws://localhost:8080/ws/render">
+                <button class="btn" id="btnConn" onclick="connect()">连接</button>
+                <button class="btn btn-gray" id="btnDisc" onclick="disconnect()" disabled>断开</button>
+            </div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="section" id="statsSection" style="display:none">
+            <h3>📊 实时统计</h3>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="sConn">0</div>
+                    <div class="stat-label">当前连接数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="sReq">0</div>
+                    <div class="stat-label">收到请求</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="sShapes">0</div>
+                    <div class="stat-label">图形总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="sOk">0</div>
+                    <div class="stat-label">成功渲染</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 响应数据展示 -->
+        <div class="section">
+            <h3>🖼️ 响应数据</h3>
+            <div class="result-grid">
+
+                <!-- 预览图 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span>📷 预览图 (preview)</span>
+                        <span id="previewBadge"></span>
+                    </div>
+                    <div class="result-card-body" id="previewBody">
+                        等待预览数据...
+                    </div>
+                </div>
+
+                <!-- 结果文件 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span>📄 结果文件 (result)</span>
+                        <span id="resultBadge"></span>
+                    </div>
+                    <div class="result-card-body" id="resultBody">
+                        等待绘图结果...
+                    </div>
+                </div>
+            </div>
+
+            <!-- 进度条 -->
+            <div id="progressWrap" style="display:none; margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; color:#666; margin-bottom:4px;">
+                    <span id="progressMsg">处理中...</span>
+                    <span id="progressPct">0%</span>
+                </div>
+                <div class="progress-wrap">
+                    <div class="progress-bar" id="progressBar" style="width:0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 通信日志 -->
+        <div class="section">
+            <h3>📋 通信日志 <button class="btn btn-gray" style="padding:4px 10px;font-size:11px;float:right;" onclick="clearLog()">清空</button></h3>
+            <div class="log" id="log">等待连接...</div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    let ws = null;
+    const stats = { conn: 0, req: 0, shapes: 0, ok: 0 };
+
+    function connect() {
+        const url = document.getElementById('wsUrl').value.trim();
+        addLog('inf', `正在连接: ${url}`);
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+            addLog('ok', '✅ WebSocket 连接成功');
+            setStatus(true);
+        };
+        ws.onmessage = e => {
+            try { handleMsg(JSON.parse(e.data)); }
+            catch(err) { addLog('err', '解析消息失败: ' + err.message); }
+        };
+        ws.onerror = () => addLog('err', '❌ 连接错误');
+        ws.onclose = () => {
+            addLog('inf', '🔌 连接已断开');
+            setStatus(false);
+        };
+    }
+
+    function disconnect() {
+        ws && ws.close();
+        ws = null;
+    }
+
+    function handleMsg(msg) {
+        switch (msg.type) {
+
+            case 'connected':
+                stats.conn = msg.total_clients || 1;
+                refreshStats();
+                addLog('ok', `🤝 服务器就绪: ${msg.msg}  (连接数: ${msg.total_clients})`);
+                document.getElementById('statsSection').style.display = 'block';
+                break;
+
+            case 'started':
+                stats.req++;
+                stats.shapes += msg.shape_count || 0;
+                refreshStats();
+                addLog('prg', `🚀 开始绘制: ${msg.filename}  图形: ${msg.shape_count}`);
+                document.getElementById('progressWrap').style.display = 'block';
+                setProgress(0, '开始处理...');
+                break;
+
+            case 'progress':
+                addLog('prg', `⏳ ${msg.pct}%  ${msg.msg}`);
+                setProgress(msg.pct, msg.msg);
+                break;
+
+            case 'preview':
+                addLog('ok', `🖼️ 收到预览图 ${msg.width}×${msg.height}`);
+                document.getElementById('previewBadge').innerHTML =
+                    `<span class="badge badge-ok">${msg.width}×${msg.height}</span>`;
+                document.getElementById('previewBody').innerHTML =
+                    `<img src="data:image/png;base64,${msg.data}" alt="preview">`;
+                break;
+
+            case 'result':
+                stats.ok += msg.success_count || 0;
+                refreshStats();
+                document.getElementById('progressWrap').style.display = 'none';
+                addLog('ok', `✅ 完成  ${msg.filename}  引擎:${msg.engine_used}  ${msg.success_count}/${msg.shape_count} 成功`);
+
+                const badge = msg.status === 'ok'
+                    ? `<span class="badge badge-ok">${msg.status}</span>`
+                    : `<span class="badge badge-err">${msg.status}</span>`;
+                document.getElementById('resultBadge').innerHTML = badge;
+
+                if (msg.format === 'png_base64' && msg.data) {
+                    // 图片结果
+                    document.getElementById('resultBody').innerHTML =
+                        `<img src="data:image/png;base64,${msg.data}" alt="result">`;
+                } else if (msg.data) {
+                    // 文件结果 (dxf/dwg)
+                    const blob = b64Blob(msg.data, 'application/octet-stream');
+                    const url  = URL.createObjectURL(blob);
+                    document.getElementById('resultBody').innerHTML = `
+                        <table class="meta-table">
+                            <tr><td>文件名</td><td>${msg.filename}</td></tr>
+                            <tr><td>引擎</td><td>${msg.engine_used || '-'}</td></tr>
+                            <tr><td>大小</td><td>${(msg.size_bytes/1024).toFixed(1)} KB</td></tr>
+                            <tr><td>图形</td><td>${msg.success_count}/${msg.shape_count} 成功</td></tr>
+                        </table>
+                        <a href="${url}" download="${msg.filename}" class="dl-btn">⬇️ 下载 ${msg.filename}</a>
+                    `;
+                } else {
+                    document.getElementById('resultBody').innerHTML =
+                        `<span style="color:#28a745">✅ ${msg.status}</span>`;
+                }
+                break;
+
+            case 'error':
+                addLog('err', `❌ ${msg.code}: ${msg.msg}`);
+                document.getElementById('progressWrap').style.display = 'none';
+                break;
+
+            default:
+                addLog('inf', `${msg.type}: ${JSON.stringify(msg).substring(0, 120)}`);
+        }
+    }
+
+    function setProgress(pct, msg) {
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressPct').textContent = pct + '%';
+        document.getElementById('progressMsg').textContent = msg;
+    }
+
+    function refreshStats() {
+        document.getElementById('sConn').textContent   = stats.conn;
+        document.getElementById('sReq').textContent    = stats.req;
+        document.getElementById('sShapes').textContent = stats.shapes;
+        document.getElementById('sOk').textContent     = stats.ok;
+    }
+
+    function setStatus(on) {
+        const pill = document.getElementById('pill');
+        const text = document.getElementById('pillText');
+        pill.className = 'status-pill ' + (on ? 'on' : 'off');
+        text.textContent = on ? '监控中' : '未连接';
+        document.getElementById('btnConn').disabled = on;
+        document.getElementById('btnDisc').disabled = !on;
+        if (!on) document.getElementById('statsSection').style.display = 'none';
+    }
+
+    function addLog(cls, msg) {
+        const el = document.getElementById('log');
+        if (el.textContent === '等待连接...') el.innerHTML = '';
+        const t = new Date().toLocaleTimeString('zh-CN');
+        const clsMap = { ok:'c-ok', err:'c-err', inf:'c-inf', prg:'c-prg' };
+        el.insertAdjacentHTML('beforeend',
+            `<div class="log-entry"><span class="t">${t}</span><span class="${clsMap[cls]||'c-inf'}">${msg}</span></div>`);
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function clearLog() {
+        document.getElementById('log').innerHTML = '';
+    }
+
+    function b64Blob(b64, mime) {
+        const raw = atob(b64);
+        const arr = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        return new Blob([arr], { type: mime });
+    }
+</script>
+</body>
+</html>

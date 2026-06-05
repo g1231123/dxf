@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCAD COM 绘图控制台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            height: 100vh;
+            overflow: hidden;
+            color: #fff;
+        }
+        
+        .app {
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* 左侧控制面板 */
+        .sidebar {
+            width: 380px;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+        
+        .header .badge {
+            display: inline-block;
+            background: #00C853;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .panel {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .panel-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #64B5F6;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        label {
+            display: block;
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 5px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #64B5F6;
+        }
+        
+        .row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .row-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        
+        /* 图形类型标签 */
+        .shape-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .tab-btn.active {
+            background: #00C853;
+            color: white;
+            border-color: #00C853;
+        }
+        
+        .shape-panel {
+            display: none;
+        }
+        
+        .shape-panel.active {
+            display: block;
+        }
+        
+        /* 按钮 */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-success {
+            background: #00C853;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        
+        /* 右侧工作区 */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+        }
+        
+        .workspace-header {
+            margin-bottom: 20px;
+        }
+        
+        .workspace-header h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .features {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .feature-item::before {
+            content: '✓';
+            color: #00C853;
+            font-weight: bold;
+        }
+        
+        /* AutoCAD 预览区域 */
+        .autocad-preview {
+            flex: 1;
+            background: rgba(0,0,0,0.4);
+            border-radius: 16px;
+            border: 2px solid rgba(255,255,255,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .preview-header {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .preview-header h3 {
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .autocad-icon {
+            width: 32px;
+            height: 32px;
+            background: #E2001A;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .preview-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #shapeCanvas {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 8px;
+        }
+        
+        .drawing-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        
+        /* 日志 */
+        .log-panel {
+            height: 180px;
+            background: rgba(0,0,0,0.4);
+            border-radius: 12px;
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .log-header {
+            background: rgba(0,0,0,0.3);
+            padding: 12px 20px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px 20px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 6px;
+            padding: 4px 0;
+        }
+        
+        .log-time { color: #666; margin-right: 10px; }
+        .log-sent { color: #64B5F6; }
+        .log-received { color: #81C784; }
+        .log-error { color: #E57373; }
+        
+        /* 结果弹窗 */
+        .result-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        .result-overlay.show {
+            display: flex;
+        }
+        
+        .result-modal {
+            background: #1e3c72;
+            border-radius: 16px;
+            padding: 30px;
+            width: 400px;
+            border: 2px solid #00C853;
+        }
+        
+        .result-modal h3 {
+            color: #00C853;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        .success-check {
+            width: 60px;
+            height: 60px;
+            background: #00C853;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            margin: 0 auto 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- 左侧控制面板 -->
+        <div class="sidebar">
+            <div class="header">
+                <h1>🎨 AutoCAD COM 控制台</h1>
+                <span class="badge">🖥️ Windows 专用</span>
+            </div>
+            
+            <!-- 连接设置 -->
+            <div class="panel">
+                <div class="panel-title">⚡ 连接设置</div>
+                <div class="form-group">
+                    <label>WebSocket 地址</label>
+                    <input type="text" id="wsUrl" value="ws://localhost:8080/ws/render">
+                </div>
+                <div class="row">
+                    <button class="btn btn-primary" onclick="connect()">🔗 连接 AutoCAD</button>
+                    <button class="btn btn-secondary" onclick="disconnect()">断开</button>
+                </div>
+            </div>
+            
+            <!-- 图形类型 -->
+            <div class="panel">
+                <div class="panel-title">📐 图形类型</div>
+                <div class="shape-tabs">
+                    <button class="tab-btn active" onclick="switchShape('circle')" id="tab-circle">⭕ 圆</button>
+                    <button class="tab-btn" onclick="switchShape('rectangle')" id="tab-rectangle">▭ 长方形</button>
+                    <button class="tab-btn" onclick="switchShape('square')" id="tab-square">⬜ 正方形</button>
+                </div>
+                
+                <!-- 圆参数 -->
+                <div class="shape-panel active" id="panel-circle">
+                    <div class="row-3">
+                        <div class="form-group">
+                            <label>圆心 X</label>
+                            <input type="number" id="cx" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>圆心 Y</label>
+                            <input type="number" id="cy" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>半径</label>
+                            <input type="number" id="r" value="50" min="0.1">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 长方形参数 -->
+                <div class="shape-panel" id="panel-rectangle">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>起点 X</label>
+                            <input type="number" id="rectX" value="50">
+                        </div>
+                        <div class="form-group">
+                            <label>起点 Y</label>
+                            <input type="number" id="rectY" value="50">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>宽度</label>
+                            <input type="number" id="rectW" value="150">
+                        </div>
+                        <div class="form-group">
+                            <label>高度</label>
+                            <input type="number" id="rectH" value="100">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>旋转角度 (°)</label>
+                        <input type="number" id="rectRotation" value="0" step="5">
+                    </div>
+                </div>
+                
+                <!-- 正方形参数 -->
+                <div class="shape-panel" id="panel-square">
+                    <div class="row">
+                        <div class="form-group">
+                            <label>起点 X</label>
+                            <input type="number" id="squareX" value="75">
+                        </div>
+                        <div class="form-group">
+                            <label>起点 Y</label>
+                            <input type="number" id="squareY" value="75">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="form-group">
+                            <label>边长</label>
+                            <input type="number" id="squareSize" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>旋转角度</label>
+                            <input type="number" id="squareRotation" value="0" step="5">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 样式与标注 -->
+            <div class="panel">
+                <div class="panel-title">🎨 样式与标注</div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>边框颜色</label>
+                        <input type="text" id="color" value="#FF0000">
+                    </div>
+                    <div class="form-group">
+                        <label>填充颜色</label>
+                        <input type="text" id="fillColor" value="#FF000033">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>🏷️ 图形名称（AutoCAD 文字标注）</label>
+                    <input type="text" id="shapeName" value="客厅" placeholder="输入名称，如：客厅、卧室">
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>名称位置</label>
+                        <select id="namePosition">
+                            <option value="center">中心</option>
+                            <option value="top">顶部</option>
+                            <option value="bottom">底部</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>文字大小</label>
+                        <input type="number" id="fontSize" value="14" min="1">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 操作按钮 -->
+            <div class="panel">
+                <button class="btn btn-success" onclick="sendDrawShape()">🎨 绘制到 AutoCAD</button>
+                <button class="btn btn-secondary" onclick="clearLog()">🗑️ 清空日志</button>
+            </div>
+        </div>
+        
+        <!-- 右侧工作区 -->
+        <div class="workspace">
+            <div class="workspace-header">
+                <h2>🖥️ AutoCAD 实时预览</h2>
+                <div class="features">
+                    <span class="feature-item">文字直接显示</span>
+                    <span class="feature-item">实时绘制过程</span>
+                    <span class="feature-item">无需额外渲染</span>
+                </div>
+            </div>
+            
+            <div class="autocad-preview">
+                <div class="preview-header">
+                    <h3>
+                        <div class="autocad-icon">A</div>
+                        AutoCAD ModelSpace
+                    </h3>
+                    <span id="connectionStatus" style="color: #f44336;">● 未连接</span>
+                </div>
+                <div class="preview-content">
+                    <canvas id="shapeCanvas" width="800" height="600"></canvas>
+                    <div class="drawing-info">
+                        <div id="previewInfo">圆心: (100, 100) | 半径: 50</div>
+                        <div id="previewName" style="margin-top: 5px; color: #64B5F6;">🏷️ 客厅</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="log-panel">
+                <div class="log-header">
+                    <span>📋 通信日志</span>
+                    <span style="color: rgba(255,255,255,0.5);">pyautocad 通过 COM 接口控制 AutoCAD</span>
+                </div>
+                <div class="log-container" id="logContainer">
+                    <div class="log-entry" style="color: rgba(255,255,255,0.5);">
+                        <span class="log-time">[提示]</span>
+                        请确保 AutoCAD 已启动，然后点击"连接 AutoCAD"
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 成功弹窗 -->
+    <div class="result-overlay" id="resultOverlay">
+        <div class="result-modal">
+            <div class="success-check">✓</div>
+            <h3>✅ 绘制成功</h3>
+            <p style="margin-bottom: 20px; color: rgba(255,255,255,0.8);">
+                图形已通过 <strong>pyautocad</strong> 绘制到 AutoCAD
+            </p>
+            <div id="resultDetails" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;"></div>
+            <button class="btn btn-success" onclick="closeResult()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let currentShape = 'circle';
+
+        function log(msg, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            const colorClass = type === 'sent' ? 'log-sent' : type === 'error' ? 'log-error' : type === 'received' ? 'log-received' : '';
+            container.innerHTML += `<div class="log-entry ${colorClass}"><span class="log-time">[${time}]</span>${msg}</div>`;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function connect() {
+            if (ws) { log('已连接', 'error'); return; }
+            
+            const url = document.getElementById('wsUrl').value;
+            log(`正在连接: ${url}`);
+            
+            ws = new WebSocket(url);
+            ws.onopen = () => {
+                log('✅ 已连接到服务端', 'received');
+                document.getElementById('connectionStatus').textContent = '● 已连接';
+                document.getElementById('connectionStatus').style.color = '#00C853';
+            };
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'result') {
+                    log(`✅ AutoCAD 绘制完成: ${msg.engine_used}`, 'received');
+                    showSuccess(msg);
+                } else if (msg.type === 'error') {
+                    log(`❌ 错误: ${msg.msg}`, 'error');
+                }
+            };
+            ws.onerror = () => log('❌ 连接错误', 'error');
+            ws.onclose = () => {
+                log('🔌 连接已关闭', 'error');
+                document.getElementById('connectionStatus').textContent = '● 未连接';
+                document.getElementById('connectionStatus').style.color = '#f44336';
+            };
+        }
+
+        function disconnect() {
+            if (ws) { ws.close(); ws = null; }
+        }
+
+        function switchShape(shape) {
+            currentShape = shape;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.shape-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`tab-${shape}`).classList.add('active');
+            document.getElementById(`panel-${shape}`).classList.add('active');
+            updatePreview();
+        }
+
+        function updatePreview() {
+            const canvas = document.getElementById('shapeCanvas');
+            const ctx = canvas.getContext('2d');
+            const color = document.getElementById('color').value;
+            const fill = document.getElementById('fillColor').value;
+            const name = document.getElementById('shapeName').value;
+            
+            // 深色背景
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 网格
+            ctx.strokeStyle = '#2a2a4e';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 50) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+            }
+            
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            
+            if (currentShape === 'circle') {
+                const r = parseFloat(document.getElementById('r').value) || 50;
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+                if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+                ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.stroke();
+                document.getElementById('previewInfo').textContent = `圆心: (100, 100) | 半径: ${r}`;
+            } else if (currentShape === 'rectangle') {
+                const w = parseFloat(document.getElementById('rectW').value) || 150;
+                const h = parseFloat(document.getElementById('rectH').value) || 100;
+                const rot = parseFloat(document.getElementById('rectRotation').value) || 0;
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(rot * Math.PI / 180);
+                if (fill) { ctx.fillStyle = fill; ctx.fillRect(-w/2, -h/2, w, h); }
+                ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(-w/2, -h/2, w, h);
+                ctx.restore();
+                document.getElementById('previewInfo').textContent = `宽: ${w} | 高: ${h} | 旋转: ${rot}°`;
+            } else if (currentShape === 'square') {
+                const s = parseFloat(document.getElementById('squareSize').value) || 100;
+                const rot = parseFloat(document.getElementById('squareRotation').value) || 0;
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(rot * Math.PI / 180);
+                if (fill) { ctx.fillStyle = fill; ctx.fillRect(-s/2, -s/2, s, s); }
+                ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(-s/2, -s/2, s, s);
+                ctx.restore();
+                document.getElementById('previewInfo').textContent = `边长: ${s} | 旋转: ${rot}°`;
+            }
+            
+            // 文字
+            if (name) {
+                ctx.fillStyle = color;
+                ctx.font = 'bold 18px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(name, cx, cy);
+            }
+            document.getElementById('previewName').textContent = name ? `🏷️ ${name}` : '';
+        }
+
+        function sendDrawShape() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('请先连接 WebSocket');
+                return;
+            }
+
+            const color = document.getElementById('color').value;
+            const fill = document.getElementById('fillColor').value;
+            const name = document.getElementById('shapeName').value;
+            const fontSize = parseInt(document.getElementById('fontSize').value) || 14;
+            
+            const shapes = [];
+            
+            if (currentShape === 'circle') {
+                const cx = parseFloat(document.getElementById('cx').value) || 100;
+                const cy = parseFloat(document.getElementById('cy').value) || 100;
+                const r = parseFloat(document.getElementById('r').value) || 50;
+                shapes.push({
+                    id: 'c' + Date.now(),
+                    type: 'circle',
+                    layer: '0',
+                    geometry: { cx, cy, r },
+                    style: { stroke_color: color, fill_color: fill }
+                });
+                if (name) {
+                    shapes.push({
+                        id: 't' + Date.now(),
+                        type: 'text',
+                        layer: '0',
+                        geometry: { x: cx, y: cy },
+                        style: { text: name, color: color, font_size: fontSize }
+                    });
+                }
+            } else if (currentShape === 'rectangle') {
+                const x = parseFloat(document.getElementById('rectX').value) || 50;
+                const y = parseFloat(document.getElementById('rectY').value) || 50;
+                const w = parseFloat(document.getElementById('rectW').value) || 150;
+                const h = parseFloat(document.getElementById('rectH').value) || 100;
+                const rot = parseFloat(document.getElementById('rectRotation').value) || 0;
+                shapes.push({
+                    id: 'r' + Date.now(),
+                    type: 'rectangle',
+                    layer: '0',
+                    geometry: { x, y, width: w, height: h, rotation: rot },
+                    style: { stroke_color: color, fill_color: fill }
+                });
+                if (name) {
+                    shapes.push({
+                        id: 't' + Date.now(),
+                        type: 'text',
+                        layer: '0',
+                        geometry: { x: x + w/2, y: y + h/2 },
+                        style: { text: name, color: color, font_size: fontSize }
+                    });
+                }
+            } else if (currentShape === 'square') {
+                const x = parseFloat(document.getElementById('squareX').value) || 75;
+                const y = parseFloat(document.getElementById('squareY').value) || 75;
+                const s = parseFloat(document.getElementById('squareSize').value) || 100;
+                const rot = parseFloat(document.getElementById('squareRotation').value) || 0;
+                shapes.push({
+                    id: 's' + Date.now(),
+                    type: 'rectangle',
+                    layer: '0',
+                    geometry: { x, y, width: s, height: s, rotation: rot },
+                    style: { stroke_color: color, fill_color: fill }
+                });
+                if (name) {
+                    shapes.push({
+                        id: 't' + Date.now(),
+                        type: 'text',
+                        layer: '0',
+                        geometry: { x: x + s/2, y: y + s/2 },
+                        style: { text: name, color: color, font_size: fontSize }
+                    });
+                }
+            }
+            
+            const request = {
+                type: 'ai_edit',
+                engine: 'autocad',  // 强制使用 AutoCAD COM
+                output_format: 'dwg',
+                shapes: shapes
+            };
+            
+            ws.send(JSON.stringify(request));
+            log(`➡️ 发送 pyautocad 绘制请求: ${currentShape}${name ? ' + 文字' : ''}`, 'sent');
+        }
+
+        function showSuccess(msg) {
+            document.getElementById('resultDetails').innerHTML = `
+                <p><strong>引擎:</strong> ${msg.engine_used}</p>
+                <p><strong>文件:</strong> ${msg.filename}</p>
+                <p><strong>图形数:</strong> ${msg.success_count} 个成功</p>
+            `;
+            document.getElementById('resultOverlay').classList.add('show');
+        }
+
+        function closeResult() {
+            document.getElementById('resultOverlay').classList.remove('show');
+        }
+
+        function clearLog() {
+            document.getElementById('logContainer').innerHTML = `
+                <div class="log-entry" style="color: rgba(255,255,255,0.5);">
+                    <span class="log-time">[提示]</span>
+                    请确保 AutoCAD 已启动，然后点击"连接 AutoCAD"
+                </div>
+            `;
+        }
+
+        // 初始化
+        window.onload = () => {
+            updatePreview();
+            document.querySelectorAll('input, select').forEach(el => {
+                el.addEventListener('input', updatePreview);
+            });
+        };
+    </script>
+</body>
+</html>

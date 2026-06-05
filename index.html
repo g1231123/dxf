@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DXF Render Service</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --error: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    header .badge {
+      background: var(--accent);
+      color: #0f172a;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      margin-top: 14px;
+    }
+    label:first-of-type { margin-top: 0; }
+    input[type=text],
+    input[type=number],
+    input[type=color],
+    select {
+      width: 100%;
+      padding: 9px 12px;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input[type=color] { padding: 4px; height: 40px; cursor: pointer; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: var(--muted);
+    }
+    .dropzone:hover, .dropzone.drag {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.05);
+      color: var(--text);
+    }
+    .dropzone strong { color: var(--accent); }
+    .dropzone .file-name {
+      margin-top: 10px;
+      color: var(--text);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .preview {
+      min-height: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: repeating-conic-gradient(#0f172a 0% 25%, #1e293b 0% 50%) 50% / 20px 20px;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    .preview img {
+      max-width: 100%;
+      max-height: 70vh;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    .preview .placeholder {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .meta {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #0f172a;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .error {
+      color: var(--error);
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    a.api-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    a.api-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DXF Render Service</h1>
+    <span><a class="api-link" href="/docs" target="_blank">API Docs →</a> <span class="badge">PyQGIS</span></span>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>渲染参数</h2>
+      <form id="form">
+        <div id="dropzone" class="dropzone">
+          <div>拖拽 <strong>.dxf</strong> 文件至此<br/>或点击选择</div>
+          <div class="file-name" id="fileName"></div>
+          <input type="file" id="file" accept=".dxf" hidden required />
+        </div>
+
+        <div class="row" style="margin-top: 16px;">
+          <div>
+            <label for="width">宽度 (px)</label>
+            <input type="number" id="width" value="1600" min="64" max="8192" />
+          </div>
+          <div>
+            <label for="height">高度 (px)</label>
+            <input type="number" id="height" value="1200" min="64" max="8192" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="fmt">输出格式</label>
+            <select id="fmt">
+              <option value="png">PNG</option>
+              <option value="jpeg">JPEG</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+          <div>
+            <label for="background">背景色</label>
+            <input type="color" id="background" value="#ffffff" />
+          </div>
+        </div>
+
+        <label for="crs">目标 CRS（可选，例如 EPSG:3857）</label>
+        <input type="text" id="crs" placeholder="留空使用图层原始 CRS" />
+
+        <button type="submit" id="submit">开始渲染</button>
+        <div class="error" id="error"></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>预览</h2>
+      <div class="preview" id="preview">
+        <div class="placeholder">渲染结果将显示在这里</div>
+      </div>
+      <div class="meta" id="meta" style="display:none"></div>
+    </section>
+  </main>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file');
+    const fileName = document.getElementById('fileName');
+    const form = document.getElementById('form');
+    const preview = document.getElementById('preview');
+    const meta = document.getElementById('meta');
+    const errorEl = document.getElementById('error');
+    const submitBtn = document.getElementById('submit');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('drag');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag');
+      if (e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        showFileName();
+      }
+    });
+    fileInput.addEventListener('change', showFileName);
+
+    function showFileName() {
+      fileName.textContent = fileInput.files[0]?.name || '';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorEl.textContent = '';
+      meta.style.display = 'none';
+
+      if (!fileInput.files.length) {
+        errorEl.textContent = '请先选择一个 .dxf 文件';
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      fd.append('width', document.getElementById('width').value);
+      fd.append('height', document.getElementById('height').value);
+      fd.append('fmt', document.getElementById('fmt').value);
+      fd.append('background', document.getElementById('background').value);
+      const crs = document.getElementById('crs').value.trim();
+      if (crs) fd.append('crs', crs);
+
+      preview.innerHTML = '<div class="spinner"></div>';
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/render/dxf', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`${res.status} ${text}`);
+        }
+        const metaHeader = res.headers.get('X-Render-Meta');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const fmt = document.getElementById('fmt').value;
+
+        preview.innerHTML = '';
+        if (fmt === 'pdf') {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'render.pdf';
+          a.textContent = '下载 PDF';
+          a.style.color = 'var(--accent)';
+          a.style.padding = '20px';
+          preview.appendChild(a);
+        } else {
+          const img = document.createElement('img');
+          img.src = url;
+          preview.appendChild(img);
+        }
+        if (metaHeader) {
+          meta.textContent = metaHeader;
+          meta.style.display = 'block';
+        }
+      } catch (err) {
+        preview.innerHTML = '<div class="placeholder">渲染失败</div>';
+        errorEl.textContent = err.message || String(err);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
